@@ -1,23 +1,12 @@
 "use client";
 
-import Dexie, { Table } from "dexie";
-import type {
-  ExpirationRecord,
-  ProductData,
-  NotificationSettings,
-} from "@/types";
+import Dexie, { Table } from 'dexie';
+import type { ExpirationRecord, ProductData, NotificationSettings } from '@/types';
 
-/* =========================================================
-   DATABASE TYPES
-========================================================= */
-
-export interface DBExpirationRecord
-  extends Omit<
-    ExpirationRecord,
-    "expirationDate" | "dateCreated" | "remainingDays" | "status"
-  > {
-  expirationDate: string; // ISO
-  dateCreated: string; // ISO
+// Database schema
+export interface DBExpirationRecord extends Omit<ExpirationRecord, 'expirationDate' | 'dateCreated' | 'remainingDays' | 'status'> {
+  expirationDate: string; // ISO string for storage
+  dateCreated: string; // ISO string for storage
 }
 
 export type DBProductData = ProductData;
@@ -25,12 +14,8 @@ export type DBProductData = ProductData;
 export interface DBSettings {
   id: string;
   notifications: NotificationSettings;
-  theme: "light" | "dark" | "system";
+  theme: 'light' | 'dark' | 'system';
 }
-
-/* =========================================================
-   DATABASE SETUP
-========================================================= */
 
 class ExpirationTrackerDB extends Dexie {
   expirationRecords!: Table<DBExpirationRecord>;
@@ -38,177 +23,183 @@ class ExpirationTrackerDB extends Dexie {
   settings!: Table<DBSettings>;
 
   constructor() {
-    super("ExpirationTrackerDB");
-
+    super('ExpirationTrackerDB');
+    
     this.version(1).stores({
-      expirationRecords:
-        "id, barcode, itemName, expirationDate, dateCreated",
-      productData: "barcode, itemName",
-      settings: "id",
+      expirationRecords: 'id, barcode, itemName, expirationDate, status, dateCreated',
+      productData: 'barcode, itemName',
+      settings: 'id'
     });
   }
 }
 
 export const db = new ExpirationTrackerDB();
 
-/* =========================================================
-   DATE CONVERSION HELPERS
-========================================================= */
-
-export const convertToExpirationRecord = (
-  dbRecord: DBExpirationRecord
-): ExpirationRecord => {
+// Utility functions for date conversion
+export const convertToExpirationRecord = (dbRecord: DBExpirationRecord): ExpirationRecord => {
   const expirationDate = new Date(dbRecord.expirationDate);
   const dateCreated = new Date(dbRecord.dateCreated);
-
   const today = new Date();
-  const remainingDays = Math.ceil(
-    (expirationDate.getTime() - today.getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
-
-  let status: "safe" | "near-expiration" | "expired";
-  if (remainingDays < 0) status = "expired";
-  else if (remainingDays <= 7) status = "near-expiration";
-  else status = "safe";
+  const timeDiff = expirationDate.getTime() - today.getTime();
+  const remainingDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+  
+  let status: 'safe' | 'near-expiration' | 'expired';
+  if (remainingDays < 0) {
+    status = 'expired';
+  } else if (remainingDays <= 7) {
+    status = 'near-expiration';
+  } else {
+    status = 'safe';
+  }
 
   return {
     ...dbRecord,
     expirationDate,
     dateCreated,
     remainingDays,
-    status,
+    status
   };
 };
 
-export const convertToDBRecord = (
-  record: Omit<ExpirationRecord, "remainingDays" | "status">
-): DBExpirationRecord => ({
+export const convertToDBRecord = (record: Omit<ExpirationRecord, 'remainingDays' | 'status'>): DBExpirationRecord => ({
   ...record,
   expirationDate: record.expirationDate.toISOString(),
-  dateCreated: record.dateCreated.toISOString(),
+  dateCreated: record.dateCreated.toISOString()
 });
 
-/* =========================================================
-   PRODUCT LOOKUP (BARCODE OR NAME)
-========================================================= */
-
-export const lookupProductData = async (
-  input: string
-): Promise<ProductData[]> => {
-  const value = input.trim().toLowerCase();
-  if (!value) return [];
-
-  const normalizedBarcode = value.replace(/\D/g, "").slice(0, 12);
-  const products = await db.productData.toArray();
-
-  return products.filter((p) =>
-    normalizedBarcode.length >= 8
-      ? p.barcode.startsWith(normalizedBarcode)
-      : p.itemName.toLowerCase().includes(value)
-  );
-};
-
-/* =========================================================
-   EXPIRATION RECORDS SERVICE
-========================================================= */
-
+// CRUD operations for expiration records
 export const expirationRecordsService = {
   async getAll(): Promise<ExpirationRecord[]> {
-    const records = await db.expirationRecords
-      .orderBy("expirationDate")
-      .toArray();
-    return records.map(convertToExpirationRecord);
+    try {
+      const records = await db.expirationRecords.orderBy('expirationDate').toArray();
+      return records.map(convertToExpirationRecord);
+    } catch (error) {
+      console.error('Error fetching expiration records:', error);
+      return [];
+    }
   },
 
   async getById(id: string): Promise<ExpirationRecord | null> {
-    const record = await db.expirationRecords.get(id);
-    return record ? convertToExpirationRecord(record) : null;
+    try {
+      const record = await db.expirationRecords.get(id);
+      return record ? convertToExpirationRecord(record) : null;
+    } catch (error) {
+      console.error('Error fetching expiration record:', error);
+      return null;
+    }
   },
 
-  async create(
-    record: Omit<ExpirationRecord, "id" | "remainingDays" | "status">
-  ): Promise<string> {
+  async create(record: Omit<ExpirationRecord, 'id' | 'remainingDays' | 'status'>): Promise<string> {
     try {
-      // 🔍 Same barcode
-      const existing = await db.expirationRecords
-        .where("barcode")
-        .equals(record.barcode)
-        .toArray();
-
-      // 🔁 Same expiration date → same batch
-      const sameBatch = existing.find(
-        (r) =>
-          new Date(r.expirationDate).toDateString() ===
-          record.expirationDate.toDateString()
-      );
-
-      // ➕ Increase quantity if same batch
-      if (sameBatch) {
-        await db.expirationRecords.update(sameBatch.id, {
-          quantity: sameBatch.quantity + record.quantity,
-        });
-        return sameBatch.id;
-      }
-
-      // 🆕 New batch
       const id = crypto.randomUUID();
       const dbRecord = convertToDBRecord({ ...record, id });
       await db.expirationRecords.add(dbRecord);
       return id;
     } catch (error) {
-      console.error("Error creating expiration record:", error);
+      console.error('Error creating expiration record:', error);
       throw error;
     }
   },
 
-  async update(
-    id: string,
-    updates: Partial<Omit<ExpirationRecord, "id" | "remainingDays" | "status">>
-  ): Promise<void> {
-    const dbUpdates: Partial<DBExpirationRecord> = {};
-
-    if (updates.expirationDate) {
-      dbUpdates.expirationDate = updates.expirationDate.toISOString();
-    }
-    if (updates.dateCreated) {
-      dbUpdates.dateCreated = updates.dateCreated.toISOString();
-    }
-
-    Object.keys(updates).forEach((key) => {
-      if (key !== "expirationDate" && key !== "dateCreated") {
-        (dbUpdates as any)[key] = (updates as any)[key];
+  async update(id: string, updates: Partial<Omit<ExpirationRecord, 'id' | 'remainingDays' | 'status'>>): Promise<void> {
+    try {
+      const dbUpdates: Partial<DBExpirationRecord> = {};
+      
+      if (updates.expirationDate) {
+        dbUpdates.expirationDate = updates.expirationDate.toISOString();
       }
-    });
+      if (updates.dateCreated) {
+        dbUpdates.dateCreated = updates.dateCreated.toISOString();
+      }
+      
+      // Copy other fields
+      Object.keys(updates).forEach(key => {
+        if (key !== 'expirationDate' && key !== 'dateCreated') {
+          (dbUpdates as Record<string, unknown>)[key] = (updates as Record<string, unknown>)[key];
+        }
+      });
 
-    await db.expirationRecords.update(id, dbUpdates);
+      await db.expirationRecords.update(id, dbUpdates);
+    } catch (error) {
+      console.error('Error updating expiration record:', error);
+      throw error;
+    }
   },
 
   async delete(id: string): Promise<void> {
-    await db.expirationRecords.delete(id);
+    try {
+      await db.expirationRecords.delete(id);
+    } catch (error) {
+      console.error('Error deleting expiration record:', error);
+      throw error;
+    }
   },
+
+  async search(query: string): Promise<ExpirationRecord[]> {
+    try {
+      const records = await db.expirationRecords
+        .filter(record => 
+          record.itemName.toLowerCase().includes(query.toLowerCase()) ||
+          record.description.toLowerCase().includes(query.toLowerCase()) ||
+          record.barcode.includes(query)
+        )
+        .toArray();
+      return records.map(convertToExpirationRecord);
+    } catch (error) {
+      console.error('Error searching expiration records:', error);
+      return [];
+    }
+  }
 };
 
-/* =========================================================
-   PRODUCT DATA SERVICE (IMPORTED DATA)
-========================================================= */
-
+// CRUD operations for product data
 export const productDataService = {
   async getAll(): Promise<ProductData[]> {
-    return await db.productData.orderBy("itemName").toArray();
+    try {
+      return await db.productData.orderBy('itemName').toArray();
+    } catch (error) {
+      console.error('Error fetching product data:', error);
+      return [];
+    }
   },
 
   async getByBarcode(barcode: string): Promise<ProductData | null> {
-    return (await db.productData.get(barcode)) || null;
+    try {
+      return await db.productData.get(barcode) || null;
+    } catch (error) {
+      console.error('Error fetching product by barcode:', error);
+      return null;
+    }
   },
 
   async create(product: ProductData): Promise<void> {
-    await db.productData.put(product);
+    try {
+      await db.productData.put(product);
+    } catch (error) {
+      console.error('Error creating product data:', error);
+      throw error;
+    }
   },
 
-  async bulkCreate(
-    products: ProductData[]
-  ): Promise<{ success: number; errors: string[] }> {
+  async update(barcode: string, updates: Partial<Omit<ProductData, 'barcode'>>): Promise<void> {
+    try {
+      await db.productData.update(barcode, updates);
+    } catch (error) {
+      console.error('Error updating product data:', error);
+      throw error;
+    }
+  },
+
+  async delete(barcode: string): Promise<void> {
+    try {
+      await db.productData.delete(barcode);
+    } catch (error) {
+      console.error('Error deleting product data:', error);
+      throw error;
+    }
+  },
+
+  async bulkCreate(products: ProductData[]): Promise<{ success: number; errors: string[] }> {
     const errors: string[] = [];
     let success = 0;
 
@@ -216,8 +207,8 @@ export const productDataService = {
       try {
         await this.create(product);
         success++;
-      } catch (err) {
-        errors.push(`Failed to import ${product.barcode}`);
+      } catch (error) {
+        errors.push(`Failed to import ${product.barcode}: ${error}`);
       }
     }
 
@@ -225,48 +216,64 @@ export const productDataService = {
   },
 
   async clear(): Promise<void> {
-    await db.productData.clear();
-  },
+    try {
+      await db.productData.clear();
+    } catch (error) {
+      console.error('Error clearing product data:', error);
+      throw error;
+    }
+  }
 };
 
-/* =========================================================
-   SETTINGS
-========================================================= */
-
+// Settings operations
 export const settingsService = {
   async get(): Promise<NotificationSettings> {
-    const settings = await db.settings.get("default");
-    return (
-      settings?.notifications || {
+    try {
+      const settings = await db.settings.get('default');
+      return settings?.notifications || {
         daysBeforeExpiration: 7,
         notifyOnExpirationDay: true,
-        quantityThreshold: 2,
-      }
-    );
+        quantityThreshold: 2
+      };
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      return {
+        daysBeforeExpiration: 7,
+        notifyOnExpirationDay: true,
+        quantityThreshold: 2
+      };
+    }
   },
 
   async update(notifications: NotificationSettings): Promise<void> {
-    await db.settings.put({
-      id: "default",
-      notifications,
-      theme: "system",
-    });
-  },
+    try {
+      await db.settings.put({
+        id: 'default',
+        notifications,
+        theme: 'system'
+      });
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      throw error;
+    }
+  }
 };
 
-/* =========================================================
-   INIT
-========================================================= */
-
+// Initialize database with default settings
 export const initializeDatabase = async (): Promise<void> => {
-  await db.open();
-
-  const existing = await db.settings.get("default");
-  if (!existing) {
-    await settingsService.update({
-      daysBeforeExpiration: 7,
-      notifyOnExpirationDay: true,
-      quantityThreshold: 2,
-    });
+  try {
+    await db.open();
+    
+    // Check if settings exist, if not create default
+    const existingSettings = await db.settings.get('default');
+    if (!existingSettings) {
+      await settingsService.update({
+        daysBeforeExpiration: 7,
+        notifyOnExpirationDay: true,
+        quantityThreshold: 2
+      });
+    }
+  } catch (error) {
+    console.error('Error initializing database:', error);
   }
 };
