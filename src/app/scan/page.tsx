@@ -16,33 +16,48 @@ export default function ScanPage() {
 
   const [barcode, setBarcode] = useState("");
   const [expirationDate, setExpirationDate] = useState("");
+  const [productName, setProductName] = useState("Scanned Item");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 🔒 Prevent double execution
+  // 🔒 hard lock against double execution
   const isHandlingRef = useRef(false);
 
   /* ---------------------------------------------
-     Lookup existing item by barcode + expiration
+     Lookup product name from imported data
+  ----------------------------------------------*/
+  const lookupProductName = async (code: string): Promise<string> => {
+    const items = await expirationRecordsService.getAll();
+    const found = items.find((item) => item.barcode === code);
+    return found?.itemName ?? "Scanned Item";
+  };
+
+  /* ---------------------------------------------
+     Find existing item by barcode + expiration date
   ----------------------------------------------*/
   const findExistingItem = async (
     code: string,
-    expDate: Date
+    exp: Date
   ): Promise<ExpirationRecord | undefined> => {
     const items = await expirationRecordsService.getAll();
     return items.find(
       (item) =>
         item.barcode === code &&
-        item.expirationDate.toDateString() === expDate.toDateString()
+        item.expirationDate.toDateString() === exp.toDateString()
     );
   };
 
   /* ---------------------------------------------
-     Create item safely
+     Handle save logic
   ----------------------------------------------*/
   const saveItem = async () => {
-    if (processing || isHandlingRef.current) return;
-    if (!barcode || barcode.length !== 12 || !expirationDate) return;
+    if (
+      processing ||
+      isHandlingRef.current ||
+      barcode.length !== 12 ||
+      !expirationDate
+    )
+      return;
 
     isHandlingRef.current = true;
     setProcessing(true);
@@ -51,18 +66,21 @@ export default function ScanPage() {
     try {
       const expDate = new Date(expirationDate);
 
-      // 🔍 Check if SAME product with SAME expiration exists
-      const existing = await findExistingItem(barcode, expDate);
+      // 🔍 product name from imported data
+      const resolvedName = await lookupProductName(barcode);
+      setProductName(resolvedName);
 
+      // 🔁 prevent duplicate (same barcode + same date)
+      const existing = await findExistingItem(barcode, expDate);
       if (existing) {
         router.push(`/item/${existing.id}`);
         return;
       }
 
-      // ➕ Create NEW item (same barcode allowed)
+      // ➕ create new item
       const newItem = await expirationRecordsService.add({
-        itemName: "Scanned Item",
-        description: "Auto-created from barcode",
+        itemName: resolvedName,
+        description: "Created from barcode",
         barcode,
         quantity: 1,
         expirationDate: expDate,
@@ -78,7 +96,7 @@ export default function ScanPage() {
   };
 
   /* ---------------------------------------------
-     Auto save when ready
+     Auto-save when ready
   ----------------------------------------------*/
   useEffect(() => {
     if (barcode.length === 12 && expirationDate) {
@@ -97,9 +115,7 @@ export default function ScanPage() {
             Back
           </Button>
         </Link>
-        <h1 className="ml-4 text-lg font-semibold">
-          Scan Product
-        </h1>
+        <h1 className="ml-4 text-lg font-semibold">Scan Product</h1>
       </header>
 
       <div className="p-4 space-y-4">
@@ -128,6 +144,12 @@ export default function ScanPage() {
             />
 
             <Input
+              placeholder="Product name (auto-filled)"
+              value={productName}
+              disabled
+            />
+
+            <Input
               type="date"
               value={expirationDate}
               onChange={(e) => setExpirationDate(e.target.value)}
@@ -141,15 +163,13 @@ export default function ScanPage() {
             )}
 
             {error && (
-              <p className="text-sm text-red-600">
-                {error}
-              </p>
+              <p className="text-sm text-red-600">{error}</p>
             )}
           </CardContent>
         </Card>
 
         <p className="text-xs text-gray-500 text-center">
-          Same barcode allowed • Different expiration dates tracked separately
+          Product name resolved from imported data • Same barcode allowed with different expiration dates
         </p>
       </div>
     </div>
