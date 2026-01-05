@@ -227,6 +227,18 @@ export const productDataService = {
   async clear(): Promise<void> {
     await db.productData.clear();
   },
+  async update(
+  barcode: string,
+  updates: Partial<Omit<ProductData, "barcode">>
+): Promise<void> {
+  try {
+    await db.productData.update(barcode, updates);
+  } catch (error) {
+    console.error("Error updating product data:", error);
+    throw error;
+  }
+},
+
 };
 
 /* =========================================================
