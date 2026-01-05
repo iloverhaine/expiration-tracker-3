@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BarcodeScanner from "@/components/BarcodeScanner";
@@ -9,54 +9,83 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft } from "lucide-react";
 import { expirationRecordsService } from "@/lib/db";
+import type { ExpirationRecord } from "@/types";
 
 export default function ScanPage() {
   const router = useRouter();
 
   const [barcode, setBarcode] = useState("");
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [expirationDate, setExpirationDate] = useState("");
+  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* ---------------------------------------------
-     AUTO CREATE ITEM WHEN BARCODE IS READY
-  ----------------------------------------------*/
-  useEffect(() => {
-    if (!barcode) return;
-
-    if (barcode.length === 12) {
-      createItem(barcode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [barcode]);
+  // 🔒 Prevent double execution
+  const isHandlingRef = useRef(false);
 
   /* ---------------------------------------------
-     CREATE ITEM & REDIRECT
+     Lookup existing item by barcode + expiration
   ----------------------------------------------*/
-  const createItem = async (barcodeValue: string) => {
-    if (isProcessing) return;
+  const findExistingItem = async (
+    code: string,
+    expDate: Date
+  ): Promise<ExpirationRecord | undefined> => {
+    const items = await expirationRecordsService.getAll();
+    return items.find(
+      (item) =>
+        item.barcode === code &&
+        item.expirationDate.toDateString() === expDate.toDateString()
+    );
+  };
 
-    setIsProcessing(true);
+  /* ---------------------------------------------
+     Create item safely
+  ----------------------------------------------*/
+  const saveItem = async () => {
+    if (processing || isHandlingRef.current) return;
+    if (!barcode || barcode.length !== 12 || !expirationDate) return;
+
+    isHandlingRef.current = true;
+    setProcessing(true);
     setError(null);
 
     try {
+      const expDate = new Date(expirationDate);
+
+      // 🔍 Check if SAME product with SAME expiration exists
+      const existing = await findExistingItem(barcode, expDate);
+
+      if (existing) {
+        router.push(`/item/${existing.id}`);
+        return;
+      }
+
+      // ➕ Create NEW item (same barcode allowed)
       const newItem = await expirationRecordsService.add({
         itemName: "Scanned Item",
-        description: "Auto-created from barcode scan",
-        barcode: barcodeValue,
+        description: "Auto-created from barcode",
+        barcode,
         quantity: 1,
-        expirationDate: new Date(
-          Date.now() + 1000 * 60 * 60 * 24 * 30 // +30 days
-        ),
+        expirationDate: expDate,
       });
 
       router.push(`/item/${newItem.id}`);
     } catch (err) {
       console.error(err);
-      setError("Failed to create item.");
-      setIsProcessing(false);
+      setError("Failed to save item.");
+      setProcessing(false);
+      isHandlingRef.current = false;
     }
   };
+
+  /* ---------------------------------------------
+     Auto save when ready
+  ----------------------------------------------*/
+  useEffect(() => {
+    if (barcode.length === 12 && expirationDate) {
+      saveItem();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barcode, expirationDate]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -69,43 +98,45 @@ export default function ScanPage() {
           </Button>
         </Link>
         <h1 className="ml-4 text-lg font-semibold">
-          Scan Barcode
+          Scan Product
         </h1>
       </header>
 
       <div className="p-4 space-y-4">
         {/* Barcode Scanner */}
         <BarcodeScanner
-          isActive={isCameraActive}
-          onToggle={() => setIsCameraActive(!isCameraActive)}
-          onScanSuccess={(code) => {
-            setBarcode(code); // already trimmed to 12 digits
-            setIsCameraActive(false);
-          }}
+          isActive={!processing}
+          onToggle={() => {}}
+          onScanSuccess={(code) => setBarcode(code)}
         />
 
-        {/* Manual Entry Fallback */}
+        {/* Manual Entry */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
-              Manual Barcode Entry
-            </CardTitle>
+            <CardTitle>Product Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input
-              placeholder="Enter barcode (12 digits)"
+              placeholder="Barcode (12 digits)"
               value={barcode}
               onChange={(e) =>
                 setBarcode(
                   e.target.value.replace(/\D/g, "").slice(0, 12)
                 )
               }
-              disabled={isProcessing}
+              disabled={processing}
             />
 
-            {isProcessing && (
+            <Input
+              type="date"
+              value={expirationDate}
+              onChange={(e) => setExpirationDate(e.target.value)}
+              disabled={processing}
+            />
+
+            {processing && (
               <p className="text-sm text-blue-600">
-                Creating item...
+                Saving product…
               </p>
             )}
 
@@ -118,7 +149,7 @@ export default function ScanPage() {
         </Card>
 
         <p className="text-xs text-gray-500 text-center">
-          Any barcode supported • First 12 digits are used
+          Same barcode allowed • Different expiration dates tracked separately
         </p>
       </div>
     </div>
