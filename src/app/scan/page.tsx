@@ -11,38 +11,54 @@ import {
   expirationRecordsService,
   productDataService,
 } from "@/lib/db";
+import type { ProductData } from "@/types";
 
 export default function ScanPage() {
   const router = useRouter();
 
   const [barcode, setBarcode] = useState("");
   const [productName, setProductName] = useState("");
+  const [suggestions, setSuggestions] = useState<ProductData[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [scannerActive, setScannerActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scannerActive, setScannerActive] = useState(false);
 
   const isHandlingRef = useRef(false);
 
   /* -------------------------------------------
-     Lookup product by BARCODE or NAME
+     Lookup product by barcode OR name
   --------------------------------------------*/
-  const lookupProductName = async (query: string): Promise<string> => {
-    if (!query.trim()) return "";
+  const lookupProducts = async (query: string) => {
+    if (!query.trim()) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
 
     const products = await productDataService.getAll();
-    const normalized = query.toLowerCase();
+    const q = query.toLowerCase();
 
-    const found = products.find(
+    const filtered = products.filter(
       (p) =>
-        p.barcode === query ||
-        p.itemName.toLowerCase().includes(normalized)
+        p.barcode.includes(query) ||
+        p.itemName.toLowerCase().includes(q)
     );
 
-    return found?.itemName ?? "";
+    setSuggestions(filtered.slice(0, 5));
+    setShowDropdown(true);
+
+    const exact = filtered.find(
+      (p) => p.barcode === query || p.itemName === query
+    );
+
+    if (exact) {
+      setProductName(exact.itemName);
+    }
   };
 
   /* -------------------------------------------
-     Handle barcode scan from camera
+     Handle scan from camera
   --------------------------------------------*/
   const handleScanSuccess = async (raw: string) => {
     if (isHandlingRef.current) return;
@@ -52,28 +68,16 @@ export default function ScanPage() {
       setScannerActive(false);
       setBarcode(raw);
 
-      const name = await lookupProductName(raw);
-      setProductName(name);
+      const products = await productDataService.getAll();
+      const found = products.find((p) => p.barcode === raw);
+
+      if (found) {
+        setProductName(found.itemName);
+      } else {
+        setProductName("Scanned Item");
+      }
     } finally {
       isHandlingRef.current = false;
-    }
-  };
-
-  /* -------------------------------------------
-     Manual lookup button
-  --------------------------------------------*/
-  const handleManualLookup = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const name = await lookupProductName(barcode);
-      setProductName(name || "Scanned Item");
-    } catch (err) {
-      console.error(err);
-      setError("Lookup failed.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -82,7 +86,7 @@ export default function ScanPage() {
   --------------------------------------------*/
   const handleSave = async () => {
     if (!barcode.trim()) {
-      setError("Barcode or name is required.");
+      setError("Barcode or product name is required.");
       return;
     }
 
@@ -113,7 +117,7 @@ export default function ScanPage() {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Scanner */}
+      {/* Camera Scanner */}
       <BarcodeScanner
         isActive={scannerActive}
         onToggle={() => setScannerActive((v) => !v)}
@@ -130,21 +134,46 @@ export default function ScanPage() {
         </CardHeader>
 
         <CardContent className="space-y-3">
-          <Input
-            placeholder="Enter barcode or product name..."
-            value={barcode}
-            onChange={async (e) => {
-              const value = e.target.value;
-              setBarcode(value);
+          <div className="relative">
+            <Input
+              placeholder="Enter barcode or product name..."
+              value={barcode}
+              onChange={async (e) => {
+                const value = e.target.value;
+                setBarcode(value);
+                await lookupProducts(value);
+              }}
+              onFocus={() => suggestions.length && setShowDropdown(true)}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+            />
 
-              const name = await lookupProductName(value);
-              setProductName(name);
-            }}
-          />
+            {/* Dropdown */}
+            {showDropdown && suggestions.length > 0 && (
+              <div className="absolute z-50 w-full bg-white border rounded-md shadow-md mt-1 max-h-48 overflow-auto">
+                {suggestions.map((item) => (
+                  <button
+                    key={item.barcode}
+                    type="button"
+                    className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                    onClick={() => {
+                      setBarcode(item.barcode);
+                      setProductName(item.itemName);
+                      setShowDropdown(false);
+                    }}
+                  >
+                    <div className="font-medium">{item.itemName}</div>
+                    <div className="text-xs text-gray-500">
+                      {item.barcode}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {productName && (
             <p className="text-sm text-green-700">
-              Product: <strong>{productName}</strong>
+              Selected: <strong>{productName}</strong>
             </p>
           )}
 
@@ -152,37 +181,24 @@ export default function ScanPage() {
             <p className="text-sm text-red-600">{error}</p>
           )}
 
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={handleManualLookup}
-              disabled={loading}
-            >
-              Lookup Product
-            </Button>
-
-            <Button
-              className="flex-1"
-              onClick={handleSave}
-              disabled={loading}
-            >
-              Save Item
-            </Button>
-          </div>
+          <Button
+            className="w-full"
+            onClick={handleSave}
+            disabled={loading}
+          >
+            Save Item
+          </Button>
         </CardContent>
       </Card>
 
-      {/* Supported Types */}
+      {/* Info */}
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4 text-sm text-blue-800">
-          <p className="font-semibold mb-1">Supported Barcode Types</p>
+          <p className="font-semibold mb-1">Notes</p>
           <ul className="list-disc ml-5">
-            <li>UPC-A (12 digits)</li>
-            <li>UPC-E (8 digits)</li>
-            <li>EAN-13</li>
-            <li>EAN-8</li>
-            <li>Custom / text-based codes</li>
+            <li>Supports all barcode types</li>
+            <li>Barcode trimmed to 12 digits on save</li>
+            <li>Manual name lookup uses imported data</li>
           </ul>
         </CardContent>
       </Card>
