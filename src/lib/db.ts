@@ -16,8 +16,8 @@ export interface DBExpirationRecord
     ExpirationRecord,
     "expirationDate" | "dateCreated" | "remainingDays" | "status"
   > {
-  expirationDate: string; // ISO
-  dateCreated: string; // ISO
+  expirationDate: string; // ISO string
+  dateCreated: string; // ISO string
 }
 
 export type DBProductData = ProductData;
@@ -52,7 +52,7 @@ class ExpirationTrackerDB extends Dexie {
 export const db = new ExpirationTrackerDB();
 
 /* =========================================================
-   DATE CONVERSION HELPERS
+   DATE HELPERS
 ========================================================= */
 
 export const convertToExpirationRecord = (
@@ -130,20 +130,17 @@ export const expirationRecordsService = {
     record: Omit<ExpirationRecord, "id" | "remainingDays" | "status">
   ): Promise<string> {
     try {
-      // 🔍 Same barcode
       const existing = await db.expirationRecords
         .where("barcode")
         .equals(record.barcode)
         .toArray();
 
-      // 🔁 Same expiration date → same batch
       const sameBatch = existing.find(
         (r) =>
           new Date(r.expirationDate).toDateString() ===
           record.expirationDate.toDateString()
       );
 
-      // ➕ Increase quantity if same batch
       if (sameBatch) {
         await db.expirationRecords.update(sameBatch.id, {
           quantity: sameBatch.quantity + record.quantity,
@@ -151,7 +148,6 @@ export const expirationRecordsService = {
         return sameBatch.id;
       }
 
-      // 🆕 New batch
       const id = crypto.randomUUID();
       const dbRecord = convertToDBRecord({ ...record, id });
       await db.expirationRecords.add(dbRecord);
@@ -206,6 +202,10 @@ export const productDataService = {
     await db.productData.put(product);
   },
 
+  async delete(barcode: string): Promise<void> {
+    await db.productData.delete(barcode);
+  },
+
   async bulkCreate(
     products: ProductData[]
   ): Promise<{ success: number; errors: string[] }> {
@@ -216,7 +216,7 @@ export const productDataService = {
       try {
         await this.create(product);
         success++;
-      } catch (err) {
+      } catch {
         errors.push(`Failed to import ${product.barcode}`);
       }
     }
