@@ -205,14 +205,7 @@ export const productDataService = {
   async create(product: ProductData): Promise<void> {
     await db.productData.put(product);
   },
-async delete(barcode: string): Promise<void> {
-    try {
-      await db.productData.delete(barcode);
-    } catch (error) {
-      console.error("Error deleting product data:", error);
-      throw error;
-    }
-  },
+
   async bulkCreate(
     products: ProductData[]
   ): Promise<{ success: number; errors: string[] }> {
