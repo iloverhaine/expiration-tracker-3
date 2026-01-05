@@ -146,23 +146,14 @@ function ScanBarcodeForm() {
               )}
             </div>
 
-            <Button 
-              onClick={handleLookup}
-              disabled={!canLookup || isLookingUp}
-              className="w-full"
-            >
-              {isLookingUp ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Looking up...
-                </>
-              ) : (
-                <>
-                  <Search className="h-4 w-4 mr-2" />
-                  Lookup Product
-                </>
-              )}
-            </Button>
+           <Button
+  onClick={() => handleLookup()}
+  disabled={!canLookup || isLookingUp}
+  className="w-full"
+>
+  Lookup Product
+</Button>
+
           </CardContent>
         </Card>
 
