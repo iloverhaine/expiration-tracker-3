@@ -7,17 +7,17 @@ import type {
   NotificationSettings,
 } from "@/types";
 
-/* =========================================================
+/* =========================
    DATABASE TYPES
-========================================================= */
+========================= */
 
 export interface DBExpirationRecord
   extends Omit<
     ExpirationRecord,
     "expirationDate" | "dateCreated" | "remainingDays" | "status"
   > {
-  expirationDate: string; // ISO string
-  dateCreated: string; // ISO string
+  expirationDate: string;
+  dateCreated: string;
 }
 
 export type DBProductData = ProductData;
@@ -28,9 +28,9 @@ export interface DBSettings {
   theme: "light" | "dark" | "system";
 }
 
-/* =========================================================
-   DATABASE SETUP
-========================================================= */
+/* =========================
+   DATABASE
+========================= */
 
 class ExpirationTrackerDB extends Dexie {
   expirationRecords!: Table<DBExpirationRecord>;
@@ -42,7 +42,7 @@ class ExpirationTrackerDB extends Dexie {
 
     this.version(1).stores({
       expirationRecords:
-        "id, barcode, itemName, expirationDate, dateCreated",
+        "id, barcode, itemName, expirationDate, status, dateCreated",
       productData: "barcode, itemName",
       settings: "id",
     });
@@ -51,17 +51,17 @@ class ExpirationTrackerDB extends Dexie {
 
 export const db = new ExpirationTrackerDB();
 
-/* =========================================================
+/* =========================
    DATE HELPERS
-========================================================= */
+========================= */
 
 export const convertToExpirationRecord = (
-  dbRecord: DBExpirationRecord
+  record: DBExpirationRecord
 ): ExpirationRecord => {
-  const expirationDate = new Date(dbRecord.expirationDate);
-  const dateCreated = new Date(dbRecord.dateCreated);
-
+  const expirationDate = new Date(record.expirationDate);
+  const dateCreated = new Date(record.dateCreated);
   const today = new Date();
+
   const remainingDays = Math.ceil(
     (expirationDate.getTime() - today.getTime()) /
       (1000 * 60 * 60 * 24)
@@ -73,7 +73,7 @@ export const convertToExpirationRecord = (
   else status = "safe";
 
   return {
-    ...dbRecord,
+    ...record,
     expirationDate,
     dateCreated,
     remainingDays,
@@ -89,29 +89,9 @@ export const convertToDBRecord = (
   dateCreated: record.dateCreated.toISOString(),
 });
 
-/* =========================================================
-   PRODUCT LOOKUP (BARCODE OR NAME)
-========================================================= */
-
-export const lookupProductData = async (
-  input: string
-): Promise<ProductData[]> => {
-  const value = input.trim().toLowerCase();
-  if (!value) return [];
-
-  const normalizedBarcode = value.replace(/\D/g, "").slice(0, 12);
-  const products = await db.productData.toArray();
-
-  return products.filter((p) =>
-    normalizedBarcode.length >= 8
-      ? p.barcode.startsWith(normalizedBarcode)
-      : p.itemName.toLowerCase().includes(value)
-  );
-};
-
-/* =========================================================
-   EXPIRATION RECORDS SERVICE
-========================================================= */
+/* =========================
+   EXPIRATION RECORDS
+========================= */
 
 export const expirationRecordsService = {
   async getAll(): Promise<ExpirationRecord[]> {
@@ -126,36 +106,34 @@ export const expirationRecordsService = {
     return record ? convertToExpirationRecord(record) : null;
   },
 
-  async create(
+  /**
+   * ✅ Allows duplicate items IF expiration date is different
+   * 🔁 Merges quantity only if SAME item + SAME expiration day
+   */
+  async add(
     record: Omit<ExpirationRecord, "id" | "remainingDays" | "status">
-  ): Promise<string> {
-    try {
-      const existing = await db.expirationRecords
-        .where("barcode")
-        .equals(record.barcode)
-        .toArray();
+  ): Promise<string | void> {
+    const existing = await this.getAll();
 
-      const sameBatch = existing.find(
-        (r) =>
-          new Date(r.expirationDate).toDateString() ===
-          record.expirationDate.toDateString()
-      );
+    const sameDay = existing.find(
+      (r) =>
+        r.itemName === record.itemName &&
+        new Date(r.expirationDate).toDateString() ===
+          new Date(record.expirationDate).toDateString()
+    );
 
-      if (sameBatch) {
-        await db.expirationRecords.update(sameBatch.id, {
-          quantity: sameBatch.quantity + record.quantity,
-        });
-        return sameBatch.id;
-      }
-
-      const id = crypto.randomUUID();
-      const dbRecord = convertToDBRecord({ ...record, id });
-      await db.expirationRecords.add(dbRecord);
-      return id;
-    } catch (error) {
-      console.error("Error creating expiration record:", error);
-      throw error;
+    if (sameDay) {
+      await this.update(sameDay.id, {
+        quantity: sameDay.quantity + record.quantity,
+      });
+      return;
     }
+
+    const id = crypto.randomUUID();
+    await db.expirationRecords.add(
+      convertToDBRecord({ ...record, id })
+    );
+    return id;
   },
 
   async update(
@@ -164,16 +142,14 @@ export const expirationRecordsService = {
   ): Promise<void> {
     const dbUpdates: Partial<DBExpirationRecord> = {};
 
-    if (updates.expirationDate) {
+    if (updates.expirationDate)
       dbUpdates.expirationDate = updates.expirationDate.toISOString();
-    }
-    if (updates.dateCreated) {
+    if (updates.dateCreated)
       dbUpdates.dateCreated = updates.dateCreated.toISOString();
-    }
 
-    Object.keys(updates).forEach((key) => {
+    Object.entries(updates).forEach(([key, value]) => {
       if (key !== "expirationDate" && key !== "dateCreated") {
-        (dbUpdates as any)[key] = (updates as any)[key];
+        (dbUpdates as any)[key] = value;
       }
     });
 
@@ -185,9 +161,9 @@ export const expirationRecordsService = {
   },
 };
 
-/* =========================================================
-   PRODUCT DATA SERVICE (IMPORTED DATA)
-========================================================= */
+/* =========================
+   PRODUCT DATA
+========================= */
 
 export const productDataService = {
   async getAll(): Promise<ProductData[]> {
@@ -202,6 +178,13 @@ export const productDataService = {
     await db.productData.put(product);
   },
 
+  async update(
+    barcode: string,
+    updates: Partial<Omit<ProductData, "barcode">>
+  ): Promise<void> {
+    await db.productData.update(barcode, updates);
+  },
+
   async delete(barcode: string): Promise<void> {
     await db.productData.delete(barcode);
   },
@@ -209,15 +192,15 @@ export const productDataService = {
   async bulkCreate(
     products: ProductData[]
   ): Promise<{ success: number; errors: string[] }> {
-    const errors: string[] = [];
     let success = 0;
+    const errors: string[] = [];
 
     for (const product of products) {
       try {
         await this.create(product);
         success++;
       } catch {
-        errors.push(`Failed to import ${product.barcode}`);
+        errors.push(product.barcode);
       }
     }
 
@@ -227,23 +210,11 @@ export const productDataService = {
   async clear(): Promise<void> {
     await db.productData.clear();
   },
-  async update(
-  barcode: string,
-  updates: Partial<Omit<ProductData, "barcode">>
-): Promise<void> {
-  try {
-    await db.productData.update(barcode, updates);
-  } catch (error) {
-    console.error("Error updating product data:", error);
-    throw error;
-  }
-},
-
 };
 
-/* =========================================================
+/* =========================
    SETTINGS
-========================================================= */
+========================= */
 
 export const settingsService = {
   async get(): Promise<NotificationSettings> {
@@ -266,9 +237,9 @@ export const settingsService = {
   },
 };
 
-/* =========================================================
+/* =========================
    INIT
-========================================================= */
+========================= */
 
 export const initializeDatabase = async (): Promise<void> => {
   await db.open();
