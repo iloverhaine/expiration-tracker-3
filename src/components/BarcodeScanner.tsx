@@ -13,6 +13,13 @@ import {
   Zap,
 } from "lucide-react";
 
+import {
+  BrowserMultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType,
+  Result,
+} from "@zxing/library";
+
 interface BarcodeScannerProps {
   onScanSuccess: (barcode: string) => void;
   isActive: boolean;
@@ -26,9 +33,9 @@ export default function BarcodeScanner({
 }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const [codeReader, setCodeReader] = useState<any>(null);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [reader, setReader] =
+    useState<BrowserMultiFormatReader | null>(null);
+  const [deviceId, setDeviceId] = useState("");
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanAttempts, setScanAttempts] = useState(0);
@@ -36,31 +43,33 @@ export default function BarcodeScanner({
   const [initializing, setInitializing] = useState(true);
 
   /* ---------------------------------------------
-     Initialize ZXing reader (client-side only)
+     Initialize ZXing — UPC-A ONLY
   ----------------------------------------------*/
   useEffect(() => {
     let mounted = true;
 
-    const init = async () => {
-      try {
-        const { BrowserMultiFormatReader } = await import("@zxing/library");
-        if (mounted) setCodeReader(new BrowserMultiFormatReader());
-      } catch (err) {
-        console.error(err);
-        setError("Failed to initialize barcode scanner.");
-      } finally {
-        if (mounted) setInitializing(false);
-      }
-    };
+    try {
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.UPC_A,
+      ]);
 
-    init();
+      const zxReader = new BrowserMultiFormatReader(hints);
+      if (mounted) setReader(zxReader);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to initialize barcode scanner.");
+    } finally {
+      if (mounted) setInitializing(false);
+    }
+
     return () => {
       mounted = false;
     };
   }, []);
 
   /* ---------------------------------------------
-     Request camera permission (USER GESTURE)
+     Request camera permission (USER ACTION)
   ----------------------------------------------*/
   const requestPermission = async () => {
     try {
@@ -72,43 +81,56 @@ export default function BarcodeScanner({
       setHasPermission(true);
       setError(null);
 
-      const allDevices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = allDevices.filter(
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(
         (d) => d.kind === "videoinput"
       );
-      setDevices(videoDevices);
 
-      const backCam =
+      const backCamera =
         videoDevices.find((d) =>
           d.label.toLowerCase().includes("back")
         ) || videoDevices[0];
 
-      setSelectedDeviceId(backCam?.deviceId || "");
+      setDeviceId(backCamera?.deviceId || "");
     } catch (err) {
       console.error(err);
       setHasPermission(false);
-      setError("Camera access denied. Please allow camera permission.");
+      setError("Camera permission denied.");
     }
   };
 
   /* ---------------------------------------------
-     Start scanning
+     Start scanning — UPC-A ONLY + trim to 12 digits
   ----------------------------------------------*/
   const startScanning = async () => {
-    if (!codeReader || !videoRef.current || !selectedDeviceId) return;
+    if (!reader || !videoRef.current || !deviceId) return;
 
     try {
       setScanning(true);
       setScanAttempts(0);
       setError(null);
 
-      await codeReader.decodeFromVideoDevice(
-        selectedDeviceId,
+      await reader.decodeFromVideoDevice(
+        deviceId,
         videoRef.current,
-        (result: any) => {
-          if (result) {
-            const text = result.getText();
-            onScanSuccess(text);
+        (result: Result | undefined) => {
+          if (!result) {
+            setScanAttempts((v) => v + 1);
+            return;
+          }
+
+          // Raw scanned text
+          const rawText = result.getText();
+
+          // Digits only
+          const digitsOnly = rawText.replace(/\D/g, "");
+
+          // Trim to UPC-A length (12 digits)
+          const upcA = digitsOnly.slice(0, 12);
+
+          // Accept ONLY when exactly 12 digits exist
+          if (upcA.length === 12) {
+            onScanSuccess(upcA);
             stopScanning();
           } else {
             setScanAttempts((v) => v + 1);
@@ -117,7 +139,7 @@ export default function BarcodeScanner({
       );
     } catch (err) {
       console.error(err);
-      setError("Failed to start scanner.");
+      setError("Failed to start scanning.");
       setScanning(false);
     }
   };
@@ -127,14 +149,14 @@ export default function BarcodeScanner({
   ----------------------------------------------*/
   const stopScanning = () => {
     try {
-      codeReader?.reset();
+      reader?.reset();
     } catch {}
     setScanning(false);
     setScanAttempts(0);
   };
 
   /* ---------------------------------------------
-     Auto-start when active & permission granted
+     Auto start / stop
   ----------------------------------------------*/
   useEffect(() => {
     if (isActive && hasPermission && !scanning) {
@@ -144,11 +166,8 @@ export default function BarcodeScanner({
       stopScanning();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, hasPermission, selectedDeviceId]);
+  }, [isActive, hasPermission, deviceId]);
 
-  /* ---------------------------------------------
-     Cleanup
-  ----------------------------------------------*/
   useEffect(() => {
     return () => stopScanning();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,7 +195,6 @@ export default function BarcodeScanner({
             <CameraOff className="h-5 w-5" />
             <span className="font-medium">Camera access required</span>
           </div>
-          <p>Please enable camera permission in your browser.</p>
           <Button onClick={() => window.location.reload()} className="w-full">
             <RotateCcw className="h-4 w-4 mr-2" />
             Reload
@@ -192,7 +210,7 @@ export default function BarcodeScanner({
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <Camera className="h-5 w-5" />
-            <span>Live Camera Scanner</span>
+            <span>UPC-A Barcode Scanner</span>
             {scanning && (
               <Badge className="bg-green-100 text-green-800">
                 <Zap className="h-3 w-3 mr-1 animate-pulse" />
@@ -205,9 +223,7 @@ export default function BarcodeScanner({
             size="sm"
             variant={isActive ? "destructive" : "default"}
             onClick={async () => {
-              if (!isActive) {
-                await requestPermission(); // 🔥 REQUIRED USER GESTURE
-              }
+              if (!isActive) await requestPermission();
               onToggle();
             }}
           >
@@ -242,8 +258,8 @@ export default function BarcodeScanner({
                 <div className="border-2 border-dashed border-white w-48 h-32 rounded-lg flex items-center justify-center">
                   <span className="text-white bg-black bg-opacity-60 px-3 py-1 rounded text-sm">
                     {scanning
-                      ? `Scanning... (${scanAttempts})`
-                      : "Align barcode here"}
+                      ? `Scanning UPC-A… (${scanAttempts})`
+                      : "Align UPC-A barcode"}
                   </span>
                 </div>
               </div>
@@ -258,13 +274,13 @@ export default function BarcodeScanner({
 
             <div className="text-xs text-green-700 bg-green-100 border border-green-300 rounded p-3 mt-3">
               <CheckCircle className="inline h-4 w-4 mr-1" />
-              Hold the barcode steady inside the frame
+              Only UPC-A (12 digits) is supported
             </div>
           </>
         ) : (
           <div className="text-center py-8 text-gray-600">
             <Camera className="h-12 w-12 mx-auto mb-4 text-blue-500" />
-            Click <strong>Start Camera</strong> to scan a barcode
+            Tap <strong>Start Camera</strong> to scan a UPC-A barcode
           </div>
         )}
       </CardContent>
