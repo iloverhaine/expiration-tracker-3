@@ -15,8 +15,6 @@ import {
 
 import {
   BrowserMultiFormatReader,
-  BarcodeFormat,
-  DecodeHintType,
   Result,
 } from "@zxing/library";
 
@@ -43,18 +41,13 @@ export default function BarcodeScanner({
   const [initializing, setInitializing] = useState(true);
 
   /* ---------------------------------------------
-     Initialize ZXing — UPC-A ONLY
+     Initialize ZXing (ALL BARCODE FORMATS)
   ----------------------------------------------*/
   useEffect(() => {
     let mounted = true;
 
     try {
-      const hints = new Map();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-        BarcodeFormat.UPC_A,
-      ]);
-
-      const zxReader = new BrowserMultiFormatReader(hints);
+      const zxReader = new BrowserMultiFormatReader();
       if (mounted) setReader(zxReader);
     } catch (err) {
       console.error(err);
@@ -100,7 +93,7 @@ export default function BarcodeScanner({
   };
 
   /* ---------------------------------------------
-     Start scanning — UPC-A ONLY + trim to 12 digits
+     Start scanning — ALL formats, trim to 12 digits
   ----------------------------------------------*/
   const startScanning = async () => {
     if (!reader || !videoRef.current || !deviceId) return;
@@ -122,15 +115,15 @@ export default function BarcodeScanner({
           // Raw scanned text
           const rawText = result.getText();
 
-          // Digits only
+          // Keep digits only
           const digitsOnly = rawText.replace(/\D/g, "");
 
-          // Trim to UPC-A length (12 digits)
-          const upcA = digitsOnly.slice(0, 12);
+          // Trim to 12 digits max
+          const trimmed = digitsOnly.slice(0, 12);
 
-          // Accept ONLY when exactly 12 digits exist
-          if (upcA.length === 12) {
-            onScanSuccess(upcA);
+          // Accept only when we have 12 digits
+          if (trimmed.length === 12) {
+            onScanSuccess(trimmed);
             stopScanning();
           } else {
             setScanAttempts((v) => v + 1);
@@ -210,7 +203,7 @@ export default function BarcodeScanner({
         <CardTitle className="flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <Camera className="h-5 w-5" />
-            <span>UPC-A Barcode Scanner</span>
+            <span>Barcode Scanner</span>
             {scanning && (
               <Badge className="bg-green-100 text-green-800">
                 <Zap className="h-3 w-3 mr-1 animate-pulse" />
@@ -258,8 +251,8 @@ export default function BarcodeScanner({
                 <div className="border-2 border-dashed border-white w-48 h-32 rounded-lg flex items-center justify-center">
                   <span className="text-white bg-black bg-opacity-60 px-3 py-1 rounded text-sm">
                     {scanning
-                      ? `Scanning UPC-A… (${scanAttempts})`
-                      : "Align UPC-A barcode"}
+                      ? `Scanning… (${scanAttempts})`
+                      : "Align barcode"}
                   </span>
                 </div>
               </div>
@@ -274,13 +267,13 @@ export default function BarcodeScanner({
 
             <div className="text-xs text-green-700 bg-green-100 border border-green-300 rounded p-3 mt-3">
               <CheckCircle className="inline h-4 w-4 mr-1" />
-              Only UPC-A (12 digits) is supported
+              Any barcode supported • Only first 12 digits are used
             </div>
           </>
         ) : (
           <div className="text-center py-8 text-gray-600">
             <Camera className="h-12 w-12 mx-auto mb-4 text-blue-500" />
-            Tap <strong>Start Camera</strong> to scan a UPC-A barcode
+            Tap <strong>Start Camera</strong> to scan a barcode
           </div>
         )}
       </CardContent>
