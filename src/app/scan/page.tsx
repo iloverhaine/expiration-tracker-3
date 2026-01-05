@@ -78,15 +78,19 @@ export default function ScanPage() {
       }
 
       // ➕ create new item
-      const newItem = await expirationRecordsService.add({
-        itemName: resolvedName,
-        description: "Created from barcode",
-        barcode,
-        quantity: 1,
-        expirationDate: expDate,
-      });
+      const newId = await expirationRecordsService.create({
+  itemName: resolvedName,
+  description: "Created from barcode",
+  notes: "", // ✅ REQUIRED
+  barcode,
+  quantity: 1,
+  expirationDate: new Date(),
+  dateCreated: new Date(),
+});
 
-      router.push(`/item/${newItem.id}`);
+
+
+      router.push(`/item/${newId}`);
     } catch (err) {
       console.error(err);
       setError("Failed to save item.");
