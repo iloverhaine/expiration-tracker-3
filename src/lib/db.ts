@@ -171,7 +171,7 @@ export const productDataService = {
   },
 
   async getByBarcode(barcode: string): Promise<ProductData | null> {
-    return (await db.productData.get(barcode)) ?? null;
+    return (await db.productData.get(barcode)) || null;
   },
 
   async create(product: ProductData): Promise<void> {
@@ -189,15 +189,28 @@ export const productDataService = {
     await db.productData.delete(barcode);
   },
 
-  async bulkCreate(products: ProductData[]): Promise<void> {
-    await db.productData.bulkPut(products);
+  async bulkCreate(
+    products: ProductData[]
+  ): Promise<{ success: number; errors: string[] }> {
+    let success = 0;
+    const errors: string[] = [];
+
+    for (const product of products) {
+      try {
+        await this.create(product);
+        success++;
+      } catch {
+        errors.push(product.barcode);
+      }
+    }
+
+    return { success, errors };
   },
 
   async clear(): Promise<void> {
     await db.productData.clear();
   },
 };
-
 
 /* =========================
    SETTINGS
