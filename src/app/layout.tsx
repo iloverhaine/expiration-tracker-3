@@ -27,10 +27,17 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className={`${inter.className} bg-gray-50 min-h-screen`}>
-        <div className="max-w-md mx-auto bg-white min-h-screen shadow-lg">
-          {children}
-        </div>
-      </body>
+  <div className="max-w-md mx-auto bg-white min-h-screen shadow-lg">
+    
+    {/* Author Header */}
+    <div className="border-b px-4 py-3 text-center text-sm text-gray-500">
+      Built by <span className="font-semibold text-gray-800">iloverhaine</span>
+    </div>
+
+    {children}
+  </div>
+</body>
+
     </html>
   );
 }
