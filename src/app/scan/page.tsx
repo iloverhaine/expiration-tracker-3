@@ -1,181 +1,191 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft } from "lucide-react";
-import { expirationRecordsService } from "@/lib/db";
-import type { ExpirationRecord } from "@/types";
+import { Search } from "lucide-react";
+import {
+  expirationRecordsService,
+  productDataService,
+} from "@/lib/db";
 
 export default function ScanPage() {
   const router = useRouter();
 
   const [barcode, setBarcode] = useState("");
-  const [expirationDate, setExpirationDate] = useState("");
-  const [productName, setProductName] = useState("Scanned Item");
-  const [processing, setProcessing] = useState(false);
+  const [productName, setProductName] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scannerActive, setScannerActive] = useState(false);
 
-  // 🔒 hard lock against double execution
   const isHandlingRef = useRef(false);
 
-  /* ---------------------------------------------
-     Lookup product name from imported data
-  ----------------------------------------------*/
-  const lookupProductName = async (code: string): Promise<string> => {
-    const items = await expirationRecordsService.getAll();
-    const found = items.find((item) => item.barcode === code);
-    return found?.itemName ?? "Scanned Item";
-  };
+  /* -------------------------------------------
+     Lookup product by BARCODE or NAME
+  --------------------------------------------*/
+  const lookupProductName = async (query: string): Promise<string> => {
+    if (!query.trim()) return "";
 
-  /* ---------------------------------------------
-     Find existing item by barcode + expiration date
-  ----------------------------------------------*/
-  const findExistingItem = async (
-    code: string,
-    exp: Date
-  ): Promise<ExpirationRecord | undefined> => {
-    const items = await expirationRecordsService.getAll();
-    return items.find(
-      (item) =>
-        item.barcode === code &&
-        item.expirationDate.toDateString() === exp.toDateString()
+    const products = await productDataService.getAll();
+    const normalized = query.toLowerCase();
+
+    const found = products.find(
+      (p) =>
+        p.barcode === query ||
+        p.itemName.toLowerCase().includes(normalized)
     );
+
+    return found?.itemName ?? "";
   };
 
-  /* ---------------------------------------------
-     Handle save logic
-  ----------------------------------------------*/
-  const saveItem = async () => {
-    if (
-      processing ||
-      isHandlingRef.current ||
-      barcode.length !== 12 ||
-      !expirationDate
-    )
-      return;
-
+  /* -------------------------------------------
+     Handle barcode scan from camera
+  --------------------------------------------*/
+  const handleScanSuccess = async (raw: string) => {
+    if (isHandlingRef.current) return;
     isHandlingRef.current = true;
-    setProcessing(true);
-    setError(null);
 
     try {
-      const expDate = new Date(expirationDate);
+      setScannerActive(false);
+      setBarcode(raw);
 
-      // 🔍 product name from imported data
-      const resolvedName = await lookupProductName(barcode);
-      setProductName(resolvedName);
-
-      // 🔁 prevent duplicate (same barcode + same date)
-      const existing = await findExistingItem(barcode, expDate);
-      if (existing) {
-        router.push(`/item/${existing.id}`);
-        return;
-      }
-
-      // ➕ create new item
-      const newId = await expirationRecordsService.create({
-  itemName: resolvedName,
-  description: "Created from barcode",
-  notes: "", // ✅ REQUIRED
-  barcode,
-  quantity: 1,
-  expirationDate: new Date(),
-  dateCreated: new Date(),
-});
-
-
-
-      router.push(`/item/${newId}`);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to save item.");
-      setProcessing(false);
+      const name = await lookupProductName(raw);
+      setProductName(name);
+    } finally {
       isHandlingRef.current = false;
     }
   };
 
-  /* ---------------------------------------------
-     Auto-save when ready
-  ----------------------------------------------*/
-  useEffect(() => {
-    if (barcode.length === 12 && expirationDate) {
-      saveItem();
+  /* -------------------------------------------
+     Manual lookup button
+  --------------------------------------------*/
+  const handleManualLookup = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const name = await lookupProductName(barcode);
+      setProductName(name || "Scanned Item");
+    } catch (err) {
+      console.error(err);
+      setError("Lookup failed.");
+    } finally {
+      setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [barcode, expirationDate]);
+  };
+
+  /* -------------------------------------------
+     Save item
+  --------------------------------------------*/
+  const handleSave = async () => {
+    if (!barcode.trim()) {
+      setError("Barcode or name is required.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const normalizedBarcode = barcode.replace(/\D/g, "").slice(0, 12);
+
+      const id = await expirationRecordsService.create({
+        barcode: normalizedBarcode || barcode,
+        itemName: productName || "Scanned Item",
+        description: "Created from scan",
+        quantity: 1,
+        expirationDate: new Date(),
+        dateCreated: new Date(),
+        notes: "",
+      });
+
+      router.push(`/edit-item/${id}`);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to save item.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b px-4 py-4 flex items-center">
-        <Link href="/">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
-        </Link>
-        <h1 className="ml-4 text-lg font-semibold">Scan Product</h1>
-      </header>
+    <div className="p-4 space-y-4">
+      {/* Scanner */}
+      <BarcodeScanner
+        isActive={scannerActive}
+        onToggle={() => setScannerActive((v) => !v)}
+        onScanSuccess={handleScanSuccess}
+      />
 
-      <div className="p-4 space-y-4">
-        {/* Barcode Scanner */}
-        <BarcodeScanner
-          isActive={!processing}
-          onToggle={() => {}}
-          onScanSuccess={(code) => setBarcode(code)}
-        />
+      {/* Manual Entry */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Manual Entry
+          </CardTitle>
+        </CardHeader>
 
-        {/* Manual Entry */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Product Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Input
-              placeholder="Barcode (12 digits)"
-              value={barcode}
-              onChange={(e) =>
-                setBarcode(
-                  e.target.value.replace(/\D/g, "").slice(0, 12)
-                )
-              }
-              disabled={processing}
-            />
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="Enter barcode or product name..."
+            value={barcode}
+            onChange={async (e) => {
+              const value = e.target.value;
+              setBarcode(value);
 
-            <Input
-              placeholder="Product name (auto-filled)"
-              value={productName}
-              disabled
-            />
+              const name = await lookupProductName(value);
+              setProductName(name);
+            }}
+          />
 
-            <Input
-              type="date"
-              value={expirationDate}
-              onChange={(e) => setExpirationDate(e.target.value)}
-              disabled={processing}
-            />
+          {productName && (
+            <p className="text-sm text-green-700">
+              Product: <strong>{productName}</strong>
+            </p>
+          )}
 
-            {processing && (
-              <p className="text-sm text-blue-600">
-                Saving product…
-              </p>
-            )}
+          {error && (
+            <p className="text-sm text-red-600">{error}</p>
+          )}
 
-            {error && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
-          </CardContent>
-        </Card>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={handleManualLookup}
+              disabled={loading}
+            >
+              Lookup Product
+            </Button>
 
-        <p className="text-xs text-gray-500 text-center">
-          Product name resolved from imported data • Same barcode allowed with different expiration dates
-        </p>
-      </div>
+            <Button
+              className="flex-1"
+              onClick={handleSave}
+              disabled={loading}
+            >
+              Save Item
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Supported Types */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4 text-sm text-blue-800">
+          <p className="font-semibold mb-1">Supported Barcode Types</p>
+          <ul className="list-disc ml-5">
+            <li>UPC-A (12 digits)</li>
+            <li>UPC-E (8 digits)</li>
+            <li>EAN-13</li>
+            <li>EAN-8</li>
+            <li>Custom / text-based codes</li>
+          </ul>
+        </CardContent>
+      </Card>
     </div>
   );
 }
