@@ -9,14 +9,22 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Bell, Save, TestTube, Download, Upload, Info } from "lucide-react";
+import {
+  Bell,
+  Save,
+  TestTube,
+  Download,
+  Upload,
+  Info,
+} from "lucide-react";
+
 import { settingsService } from "@/lib/db";
-import { 
-  requestNotificationPermission, 
-  getNotificationPermission, 
+import {
+  requestNotificationPermission,
+  getNotificationPermission,
   getPermissionStatusMessage,
   sendTestNotification,
-  isNotificationSupported
+  isNotificationSupported,
 } from "@/lib/notifications";
 import type { NotificationSettings } from "@/types";
 
@@ -24,13 +32,14 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<NotificationSettings>({
     daysBeforeExpiration: 7,
     notifyOnExpirationDay: true,
-    quantityThreshold: 2
+    quantityThreshold: 2,
   });
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
-  const [saveMessage, setSaveMessage] = useState<string>('');
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermission>("default");
+  const [saveMessage, setSaveMessage] = useState("");
 
   useEffect(() => {
     loadSettings();
@@ -39,138 +48,112 @@ export default function SettingsPage() {
 
   const loadSettings = async () => {
     try {
-      const loadedSettings = await settingsService.get();
-      setSettings(loadedSettings);
-    } catch (error) {
-      console.error('Error loading settings:', error);
+      const loaded = await settingsService.get();
+      setSettings(loaded);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSettingChange = (field: keyof NotificationSettings, value: number | boolean) => {
-    setSettings(prev => ({ ...prev, [field]: value }));
-    setSaveMessage(''); // Clear save message when user makes changes
+  const handleChange = (
+    field: keyof NotificationSettings,
+    value: number | boolean
+  ) => {
+    setSettings((prev) => ({ ...prev, [field]: value }));
+    setSaveMessage("");
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    setSaveMessage('');
+    setSaveMessage("");
 
     try {
       await settingsService.update(settings);
-      setSaveMessage('Settings saved successfully!');
-      setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      setSaveMessage('Failed to save settings. Please try again.');
+      setSaveMessage("Settings saved successfully");
+      setTimeout(() => setSaveMessage(""), 3000);
+    } catch (err) {
+      console.error(err);
+      setSaveMessage("Failed to save settings");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleRequestNotificationPermission = async () => {
+  const handlePermission = async () => {
     const permission = await requestNotificationPermission();
     setNotificationPermission(permission);
-    
-    if (permission === 'granted') {
-      setSaveMessage('Notifications enabled successfully!');
-      setTimeout(() => setSaveMessage(''), 3000);
-    }
-  };
-
-  const handleTestNotification = () => {
-    sendTestNotification();
-    setSaveMessage('Test notification sent!');
-    setTimeout(() => setSaveMessage(''), 3000);
   };
 
   const getPermissionBadgeColor = (permission: NotificationPermission) => {
     switch (permission) {
-      case 'granted':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'denied':
-        return 'bg-red-100 text-red-800 border-red-200';
+      case "granted":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "denied":
+        return "bg-red-100 text-red-800 border-red-200";
       default:
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return "bg-yellow-100 text-yellow-800 border-yellow-200";
     }
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading settings...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header (NO BACK BUTTON) */}
       <header className="bg-white border-b border-gray-200 px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Link href="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-          </div>
-        </div>
+        <h1 className="text-xl font-bold text-gray-900">Settings</h1>
       </header>
 
       <div className="p-4 space-y-6">
-        {/* Notification Settings */}
+        {/* Notifications */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
+            <CardTitle className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
-              <span>Notification Settings</span>
+              Notification Settings
             </CardTitle>
           </CardHeader>
+
           <CardContent className="space-y-6">
-            {/* Permission Status */}
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <Label>Notification Permission</Label>
-                <Badge 
-                  variant="outline" 
+              <div className="flex justify-between items-center mb-2">
+                <Label>Permission</Label>
+                <Badge
+                  variant="outline"
                   className={getPermissionBadgeColor(notificationPermission)}
                 >
                   {notificationPermission}
                 </Badge>
               </div>
+
               <p className="text-sm text-gray-600 mb-3">
                 {getPermissionStatusMessage(notificationPermission)}
               </p>
-              
-              {!isNotificationSupported() && (
-                <div className="bg-yellow-50 border border-yellow-200 p-3 rounded">
-                  <p className="text-sm text-yellow-800">
-                    Notifications are not supported in this browser.
-                  </p>
-                </div>
-              )}
-              
-              {isNotificationSupported() && notificationPermission !== 'granted' && (
-                <Button 
-                  onClick={handleRequestNotificationPermission}
+
+              {isNotificationSupported() &&
+                notificationPermission !== "granted" && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handlePermission}
+                  >
+                    Enable Notifications
+                  </Button>
+                )}
+
+              {notificationPermission === "granted" && (
+                <Button
                   variant="outline"
                   className="w-full"
-                >
-                  Enable Notifications
-                </Button>
-              )}
-              
-              {notificationPermission === 'granted' && (
-                <Button 
-                  onClick={handleTestNotification}
-                  variant="outline"
-                  className="w-full"
+                  onClick={sendTestNotification}
                 >
                   <TestTube className="h-4 w-4 mr-2" />
                   Send Test Notification
@@ -180,164 +163,103 @@ export default function SettingsPage() {
 
             <Separator />
 
-            {/* Days Before Expiration */}
             <div>
-              <Label htmlFor="daysBeforeExpiration">
-                Notify X days before expiration
-              </Label>
-              <div className="flex items-center space-x-3 mt-2">
-                <Input
-                  id="daysBeforeExpiration"
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={settings.daysBeforeExpiration}
-                  onChange={(e) => handleSettingChange('daysBeforeExpiration', parseInt(e.target.value) || 1)}
-                  className="w-20 text-center"
-                />
-                <span className="text-sm text-gray-600">days</span>
-              </div>
-              <p className="text-sm text-gray-500 mt-1">
-                Get notified {settings.daysBeforeExpiration} days before items expire
-              </p>
-            </div>
-
-            {/* Expiration Day Notification */}
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="notifyOnExpirationDay">
-                  Notify on expiration day
-                </Label>
-                <p className="text-sm text-gray-500">
-                  Get notified when items expire today
-                </p>
-              </div>
-              <Switch
-                id="notifyOnExpirationDay"
-                checked={settings.notifyOnExpirationDay}
-                onCheckedChange={(checked) => handleSettingChange('notifyOnExpirationDay', checked)}
+              <Label>Notify before expiration (days)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={settings.daysBeforeExpiration}
+                onChange={(e) =>
+                  handleChange(
+                    "daysBeforeExpiration",
+                    Number(e.target.value)
+                  )
+                }
+                className="w-24 mt-2"
               />
             </div>
 
-            {/* Quantity Threshold */}
-            <div>
-              <Label htmlFor="quantityThreshold">
-                Low quantity threshold
-              </Label>
-              <div className="flex items-center space-x-3 mt-2">
-                <span className="text-sm text-gray-600">Notify when quantity ≤</span>
-                <Input
-                  id="quantityThreshold"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={settings.quantityThreshold}
-                  onChange={(e) => handleSettingChange('quantityThreshold', parseInt(e.target.value) || 1)}
-                  className="w-20 text-center"
-                />
-                <span className="text-sm text-gray-600">items</span>
+            <div className="flex justify-between items-center">
+              <div>
+                <Label>Notify on expiration day</Label>
+                <p className="text-sm text-gray-500">
+                  Receive alerts when items expire today
+                </p>
               </div>
-              <p className="text-sm text-gray-500 mt-1">
-                Get notified when item quantity is {settings.quantityThreshold} or less
-              </p>
+              <Switch
+                checked={settings.notifyOnExpirationDay}
+                onCheckedChange={(v) =>
+                  handleChange("notifyOnExpirationDay", v)
+                }
+              />
+            </div>
+
+            <div>
+              <Label>Low quantity threshold</Label>
+              <Input
+                type="number"
+                min={1}
+                value={settings.quantityThreshold}
+                onChange={(e) =>
+                  handleChange("quantityThreshold", Number(e.target.value))
+                }
+                className="w-24 mt-2"
+              />
             </div>
           </CardContent>
         </Card>
 
-        {/* Data Management */}
+        {/* Data */}
         <Card>
           <CardHeader>
             <CardTitle>Data Management</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Link href="/import" className="block">
-                <Button variant="outline" className="w-full h-12">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import Data
-                </Button>
-              </Link>
-              <Link href="/export" className="block">
-                <Button variant="outline" className="w-full h-12">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Data
-                </Button>
-              </Link>
-            </div>
-            <p className="text-sm text-gray-600">
-              Import product data from Excel/CSV files or export your expiration records
-            </p>
+          <CardContent className="grid grid-cols-2 gap-3">
+            <Link href="/import">
+              <Button variant="outline" className="w-full">
+                <Upload className="h-4 w-4 mr-2" />
+                Import
+              </Button>
+            </Link>
+            <Link href="/export">
+              <Button variant="outline" className="w-full">
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
-        {/* App Information */}
+        {/* App Info */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
+            <CardTitle className="flex items-center gap-2">
               <Info className="h-5 w-5" />
-              <span>App Information</span>
+              App Information
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-gray-600">Version</p>
-                <p className="font-medium">1.0.0</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Storage</p>
-                <p className="font-medium">IndexedDB</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Platform</p>
-                <p className="font-medium">Web App</p>
-              </div>
-              <div>
-                <p className="text-gray-600">Offline</p>
-                <p className="font-medium">Supported</p>
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <p className="text-sm text-gray-600">
-                Expiration Tracker helps you manage product expiration dates with barcode scanning, 
-                notifications, and Excel import/export capabilities. All data is stored locally 
-                on your device for privacy and offline access.
-              </p>
-            </div>
+          <CardContent className="text-sm text-gray-600 space-y-2">
+            <p>Version: 1.0.0</p>
+            <p>Storage: IndexedDB</p>
+            <p>Offline Support: Yes</p>
           </CardContent>
         </Card>
 
-        {/* Save Button */}
-        <div className="space-y-3">
-          {saveMessage && (
-            <div className={`p-3 rounded border ${
-              saveMessage.includes('Failed') 
-                ? 'bg-red-50 border-red-200 text-red-700'
-                : 'bg-green-50 border-green-200 text-green-700'
-            }`}>
-              <p className="text-sm">{saveMessage}</p>
-            </div>
-          )}
-          
-          <Button 
-            onClick={handleSave}
-            disabled={isSaving}
-            className="w-full h-12 text-lg"
-          >
-            {isSaving ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-5 w-5 mr-2" />
-                Save Settings
-              </>
-            )}
-          </Button>
-        </div>
+        {/* Save */}
+        {saveMessage && (
+          <div className="text-sm text-center text-green-700">
+            {saveMessage}
+          </div>
+        )}
+
+        <Button
+          className="w-full h-12"
+          disabled={isSaving}
+          onClick={handleSave}
+        >
+          <Save className="h-5 w-5 mr-2" />
+          {isSaving ? "Saving..." : "Save Settings"}
+        </Button>
       </div>
     </div>
   );
