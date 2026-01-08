@@ -1,328 +1,206 @@
 "use client";
 
-import * as XLSX from 'xlsx';
-import type { ExpirationRecord, ProductData, ExcelImportResult, ExcelExportData } from '@/types';
+import * as XLSX from "xlsx";
+import type { ExpirationRecord, ProductData, ExcelImportResult } from "@/types";
 
-// Excel import for product data
-export const importProductDataFromExcel = async (file: File): Promise<ExcelImportResult> => {
+/* =====================================================
+   EXPORT EXPIRATION RECORDS (WITH COLUMN FILTERING)
+===================================================== */
+
+export const exportExpirationRecordsToExcel = (
+  records: ExpirationRecord[],
+  columnOptions?: {
+    barcode?: boolean;
+    itemName?: boolean;
+    description?: boolean;
+    quantity?: boolean;
+    expirationDate?: boolean;
+    remainingDays?: boolean;
+    status?: boolean;
+    notes?: boolean;
+    dateCreated?: boolean;
+  }
+): void => {
+  const options = {
+    barcode: true,
+    itemName: true,
+    description: true,
+    quantity: true,
+    expirationDate: true,
+    remainingDays: true,
+    status: true,
+    notes: true,
+    dateCreated: true,
+    ...columnOptions,
+  };
+
+  const rows = records.map((r) => {
+    const row: Record<string, string | number> = {};
+
+    if (options.barcode) row["Barcode"] = r.barcode;
+    if (options.itemName) row["Item Name"] = r.itemName;
+    if (options.description) row["Description"] = r.description;
+    if (options.quantity) row["Quantity"] = r.quantity;
+    if (options.expirationDate)
+      row["Expiration Date"] = r.expirationDate.toLocaleDateString();
+    if (options.remainingDays) row["Remaining Days"] = r.remainingDays;
+    if (options.status)
+      row["Status"] = r.status.replace("-", " ");
+    if (options.notes) row["Notes"] = r.notes;
+    if (options.dateCreated)
+      row["Date Created"] = r.dateCreated.toLocaleDateString();
+
+    return row;
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Expiration Records");
+
+  const date = new Date().toISOString().split("T")[0];
+  XLSX.writeFile(workbook, `expiration-records-${date}.xlsx`);
+};
+
+/* =====================================================
+   IMPORT PRODUCT DATA (EXCEL)
+===================================================== */
+
+export const importProductDataFromExcel = async (
+  file: File
+): Promise<ExcelImportResult> => {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    
-    // Convert to JSON
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
-    
-    if (jsonData.length < 2) {
-      return {
-        success: false,
-        imported: 0,
-        errors: ['File must contain at least a header row and one data row']
-      };
-    }
-
-    const headers = jsonData[0].map(h => h?.toString().toLowerCase().trim());
-    
-    // Find column indices with flexible matching
-    const barcodeIndex = headers.findIndex(h => 
-      h.includes('barcode') || h.includes('upc') || h.includes('ean') || h.includes('code')
-    );
-    
-    const itemNameIndex = headers.findIndex(h => 
-      h.includes('item') || h.includes('name') || h.includes('product') || h.includes('title')
-    );
-    
-    const descriptionIndex = headers.findIndex(h => 
-      h.includes('description') || h.includes('desc') || h.includes('detail')
-    );
-
-    // Check for required columns
-    if (barcodeIndex === -1) {
-      return {
-        success: false,
-        imported: 0,
-        errors: ['Barcode column not found. Expected column names: Barcode, UPC, EAN, or Code']
-      };
-    }
-    
-    if (itemNameIndex === -1) {
-      return {
-        success: false,
-        imported: 0,
-        errors: ['Item name column not found. Expected column names: Item Name, Name, Product, or Title']
-      };
-    }
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
 
     const products: ProductData[] = [];
     const errors: string[] = [];
 
-    // Process data rows
-    for (let i = 1; i < jsonData.length; i++) {
-      const row = jsonData[i];
-      
-      if (!row || row.length === 0) continue;
-
-      const barcode = row[barcodeIndex]?.toString().trim();
-      const itemName = row[itemNameIndex]?.toString().trim();
-      const description = row[descriptionIndex]?.toString().trim();
+    rows.forEach((row, index) => {
+      const barcode = String(
+        row.Barcode || row.barcode || row.UPC || ""
+      ).trim();
+      const itemName = String(
+        row["Item Name"] || row.itemName || ""
+      ).trim();
+      const description = String(row.Description || "").trim();
 
       if (!barcode || !itemName) {
-        errors.push(`Row ${i + 1}: Missing barcode or item name`);
-        continue;
+        errors.push(`Row ${index + 2}: Missing barcode or item name`);
+        return;
       }
 
-      products.push({
-        barcode,
-        itemName,
-        description: description || ''
-      });
-    }
+      products.push({ barcode, itemName, description });
+    });
 
     return {
-      success: true,
+      success: errors.length === 0,
       imported: products.length,
       errors,
-      data: products
+      data: products,
     };
-
-  } catch (error) {
+  } catch (err) {
     return {
       success: false,
       imported: 0,
-      errors: [`Failed to parse Excel file: ${error}`]
+      errors: ["Failed to read Excel file"],
     };
   }
 };
 
-// Excel export for expiration records
-export const exportExpirationRecordsToExcel = (records: ExpirationRecord[]): void => {
-  try {
-    // Prepare data for export
-    const exportData: ExcelExportData[] = records.map(record => ({
-      barcode: record.barcode,
-      itemName: record.itemName,
-      description: record.description,
-      quantity: record.quantity,
-      expirationDate: record.expirationDate.toLocaleDateString(),
-      remainingDays: record.remainingDays,
-      status: record.status.replace('-', ' '),
-      notes: record.notes,
-      dateCreated: record.dateCreated.toLocaleDateString()
-    }));
+/* =====================================================
+   IMPORT PRODUCT DATA (CSV)
+===================================================== */
 
-    // Create workbook and worksheet
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.json_to_sheet(exportData, {
-      header: [
-        'barcode',
-        'itemName', 
-        'description',
-        'quantity',
-        'expirationDate',
-        'remainingDays',
-        'status',
-        'notes',
-        'dateCreated'
-      ]
-    });
+export const importProductDataFromCSV = async (
+  file: File
+): Promise<ExcelImportResult> => {
+  const text = await file.text();
+  const lines = text.split("\n").filter(Boolean);
 
-    // Set column headers
-    const headers = [
-      'Barcode',
-      'Item Name',
-      'Description', 
-      'Quantity',
-      'Expiration Date',
-      'Remaining Days',
-      'Status',
-      'Notes',
-      'Date Created'
-    ];
+  const headers = lines[0].split(",").map((h) => h.toLowerCase());
+  const barcodeIndex = headers.findIndex((h) => h.includes("barcode"));
+  const nameIndex = headers.findIndex((h) => h.includes("name"));
+  const descIndex = headers.findIndex((h) => h.includes("desc"));
 
-    // Update header row
-    headers.forEach((header, index) => {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: index });
-      if (worksheet[cellAddress]) {
-        worksheet[cellAddress].v = header;
-      }
-    });
+  const products: ProductData[] = [];
+  const errors: string[] = [];
 
-    // Set column widths
-    const columnWidths = [
-      { wch: 15 }, // Barcode
-      { wch: 25 }, // Item Name
-      { wch: 30 }, // Description
-      { wch: 10 }, // Quantity
-      { wch: 15 }, // Expiration Date
-      { wch: 15 }, // Remaining Days
-      { wch: 15 }, // Status
-      { wch: 30 }, // Notes
-      { wch: 15 }  // Date Created
-    ];
-    worksheet['!cols'] = columnWidths;
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Expiration Records');
+    const barcode = cols[barcodeIndex]?.trim();
+    const itemName = cols[nameIndex]?.trim();
+    const description = cols[descIndex]?.trim() ?? "";
 
-    // Generate filename with current date
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
-    const filename = `expiration-records-${dateStr}.xlsx`;
+    if (!barcode || !itemName) {
+      errors.push(`Row ${i + 1}: Missing barcode or item name`);
+      continue;
+    }
 
-    // Write and download file
-    XLSX.writeFile(workbook, filename);
-
-  } catch (error) {
-    console.error('Error exporting to Excel:', error);
-    throw new Error('Failed to export data to Excel');
+    products.push({ barcode, itemName, description });
   }
+
+  return {
+    success: errors.length === 0,
+    imported: products.length,
+    errors,
+    data: products,
+  };
 };
 
-// Template download for product data import
-export const downloadProductDataTemplate = (): void => {
-  try {
-    const templateData = [
-      {
-        'Barcode': '0123456789',
-        'Item Name': 'Sample Product',
-        'Description': 'Sample product description'
-      },
-      {
-        'Barcode': '9876543210', 
-        'Item Name': 'Another Product',
-        'Description': 'Another product description'
-      }
-    ];
+/* =====================================================
+   FILE VALIDATION
+===================================================== */
 
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-
-    // Set column widths
-    worksheet['!cols'] = [
-      { wch: 15 }, // Barcode
-      { wch: 25 }, // Item Name
-      { wch: 30 }  // Description
-    ];
-
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Product Data Template');
-    XLSX.writeFile(workbook, 'product-data-template.xlsx');
-
-  } catch (error) {
-    console.error('Error creating template:', error);
-    throw new Error('Failed to create template file');
-  }
-};
-
-// Validate Excel file before processing
-export const validateExcelFile = (file: File): { valid: boolean; error?: string } => {
-  // Check file type
-  const validTypes = [
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-    'application/vnd.ms-excel', // .xls
-    'text/csv' // .csv
+export const validateExcelFile = (file: File) => {
+  const allowed = [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
   ];
 
-  if (!validTypes.includes(file.type)) {
-    return {
-      valid: false,
-      error: 'Please select a valid Excel file (.xlsx, .xls) or CSV file'
-    };
+  if (!allowed.includes(file.type)) {
+    return { valid: false, error: "Invalid file type" };
   }
 
-  // Check file size (max 10MB)
-  const maxSize = 10 * 1024 * 1024; // 10MB
-  if (file.size > maxSize) {
-    return {
-      valid: false,
-      error: 'File size must be less than 10MB'
-    };
+  if (file.size > 10 * 1024 * 1024) {
+    return { valid: false, error: "File too large (max 10MB)" };
   }
 
   return { valid: true };
 };
 
-// CSV import support
-export const importProductDataFromCSV = async (file: File): Promise<ExcelImportResult> => {
-  try {
-    const text = await file.text();
-    const lines = text.split('\n').filter(line => line.trim());
-    
-    if (lines.length < 2) {
-      return {
-        success: false,
-        imported: 0,
-        errors: ['CSV file must contain at least a header row and one data row']
-      };
-    }
+/* =====================================================
+   DOWNLOAD PRODUCT DATA TEMPLATE
+===================================================== */
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
-    
-    // Find column indices with flexible matching
-    const barcodeIndex = headers.findIndex(h => 
-      h.includes('barcode') || h.includes('upc') || h.includes('ean') || h.includes('code')
-    );
-    
-    const itemNameIndex = headers.findIndex(h => 
-      h.includes('item') || h.includes('name') || h.includes('product') || h.includes('title')
-    );
-    
-    const descriptionIndex = headers.findIndex(h => 
-      h.includes('description') || h.includes('desc') || h.includes('detail')
-    );
+export const downloadProductDataTemplate = (): void => {
+  const template = [
+    {
+      Barcode: "012345678901",
+      "Item Name": "Sample Product",
+      Description: "Optional description",
+    },
+    {
+      Barcode: "098765432109",
+      "Item Name": "Another Product",
+      Description: "Another description",
+    },
+  ];
 
-    // Check for required columns
-    if (barcodeIndex === -1) {
-      return {
-        success: false,
-        imported: 0,
-        errors: ['Barcode column not found. Expected column names: Barcode, UPC, EAN, or Code']
-      };
-    }
-    
-    if (itemNameIndex === -1) {
-      return {
-        success: false,
-        imported: 0,
-        errors: ['Item name column not found. Expected column names: Item Name, Name, Product, or Title']
-      };
-    }
+  const worksheet = XLSX.utils.json_to_sheet(template);
+  const workbook = XLSX.utils.book_new();
 
-    const products: ProductData[] = [];
-    const errors: string[] = [];
+  worksheet["!cols"] = [
+    { wch: 18 }, // Barcode
+    { wch: 30 }, // Item Name
+    { wch: 40 }, // Description
+  ];
 
-    // Process data rows
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-      
-      const barcode = values[barcodeIndex]?.trim();
-      const itemName = values[itemNameIndex]?.trim();
-      const description = values[descriptionIndex]?.trim();
-
-      if (!barcode || !itemName) {
-        errors.push(`Row ${i + 1}: Missing barcode or item name`);
-        continue;
-      }
-
-      products.push({
-        barcode,
-        itemName,
-        description: description || ''
-      });
-    }
-
-    return {
-      success: true,
-      imported: products.length,
-      errors,
-      data: products
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      imported: 0,
-      errors: [`Failed to parse CSV file: ${error}`]
-    };
-  }
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Product Template");
+  XLSX.writeFile(workbook, "product-data-template.xlsx");
 };
+
