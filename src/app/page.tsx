@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Search, Scan, Upload } from "lucide-react";
 import {
@@ -21,6 +20,12 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
 
+  /* ---------------- INIT ---------------- */
+  const loadRecords = async () => {
+    const data = await expirationRecordsService.getAll();
+    setRecords(data);
+  };
+
   const initializeApp = useCallback(async () => {
     try {
       await initializeDatabase();
@@ -30,8 +35,6 @@ export default function HomePage() {
         () => expirationRecordsService.getAll(),
         () => settingsService.get()
       );
-    } catch (error) {
-      console.error("Error initializing app:", error);
     } finally {
       setLoading(false);
     }
@@ -41,34 +44,51 @@ export default function HomePage() {
     initializeApp();
   }, [initializeApp]);
 
-  const loadRecords = async () => {
-    const data = await expirationRecordsService.getAll();
-    setRecords(data);
-  };
-
   useEffect(() => {
     const onFocus = () => loadRecords();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  /* ---------------- IMPORT ---------------- */
   const handleImport = async (file: File) => {
     try {
       await importExpirationRecords(file);
-      await loadRecords(); // refresh immediately
+      await loadRecords();
     } catch (e) {
       console.error(e);
       alert("Failed to import file");
     }
   };
 
+  /* ---------------- HELPERS ---------------- */
+  const getDaysUntilExpiration = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const exp = new Date(date);
+    exp.setHours(0, 0, 0, 0);
+
+    return Math.ceil(
+      (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    );
+  };
+
+  const getStatus = (days: number) => {
+    if (days < 0) return "expired";
+    if (days <= 7) return "expiring";
+    return "ok";
+  };
+
+  /* ---------------- FILTER ---------------- */
   const filteredRecords = records.filter(
     (r) =>
       r.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.barcode.includes(searchTerm)
+      (r.description ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.barcode ?? "").includes(searchTerm)
   );
 
+  /* ---------------- LOADING ---------------- */
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -77,9 +97,10 @@ export default function HomePage() {
     );
   }
 
+  /* ---------------- UI ---------------- */
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ACTION BUTTONS */}
+      {/* ACTIONS */}
       <div className="p-4 space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Link href="/scan">
@@ -125,28 +146,89 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ITEM LIST */}
+      {/* ITEM LIST (OLD FORMAT) */}
       <div className="px-4 pb-6 space-y-3">
-        {filteredRecords.map((record) => (
-          <Link key={record.id} href={`/item/${record.id}`}>
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <CardTitle>{record.itemName}</CardTitle>
-                <p className="text-sm text-gray-600">
-                  {record.description}
-                </p>
-              </CardHeader>
-              <CardContent className="pt-0 flex justify-between text-sm">
-                <div>
-                  <p>Expires: {record.expirationDate.toLocaleDateString()}</p>
-                </div>
-                <Badge variant="outline">
-                  Qty: {record.quantity}
-                </Badge>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+        {filteredRecords.map((record) => {
+          const days = getDaysUntilExpiration(record.expirationDate);
+          const status = getStatus(days);
+
+          return (
+            <Link key={record.id} href={`/item/${record.id}`}>
+              <Card className="hover:shadow-md transition-shadow">
+                <CardContent className="p-4">
+                  {/* TOP */}
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-semibold">
+                        {record.itemName}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {record.description || "Created from scan"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* STATUS DOT */}
+                      <span
+                        className={`h-3 w-3 rounded-full ${
+                          status === "expired"
+                            ? "bg-red-500"
+                            : status === "expiring"
+                            ? "bg-yellow-400"
+                            : "bg-green-500"
+                        }`}
+                      />
+
+                      {/* QTY */}
+                      <span className="px-2 py-1 text-xs rounded-full border">
+                        Qty: {record.quantity}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* BOTTOM */}
+                  <div className="mt-4 flex justify-between items-end">
+                    <div>
+                      <p className="text-sm text-gray-600">
+                        Expires:{" "}
+                        {record.expirationDate.toLocaleDateString()}
+                      </p>
+
+                      <p
+                        className={`text-sm font-medium ${
+                          status === "expired"
+                            ? "text-red-600"
+                            : status === "expiring"
+                            ? "text-yellow-600"
+                            : "text-green-600"
+                        }`}
+                      >
+                        {status === "expired"
+                          ? `Expired ${Math.abs(days)} days ago`
+                          : status === "expiring"
+                          ? `Expires in ${days} days`
+                          : "Not expired"}
+                      </p>
+                    </div>
+
+                    {/* STATUS BADGE */}
+                    <span
+                      className={`px-3 py-1 text-xs rounded-full capitalize ${
+                        status === "expired"
+                          ? "bg-red-100 text-red-700"
+                          : status === "expiring"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-green-100 text-green-700"
+                      }`}
+                    >
+                      {status}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
