@@ -32,9 +32,18 @@ export default function HomePage() {
       await loadRecords();
 
       scheduleDailyNotificationCheck(
-        () => expirationRecordsService.getAll(),
-        () => settingsService.get()
-      );
+  () => expirationRecordsService.getAll(),
+  async () => {
+    return {
+      notificationsEnabled: true,
+      daysBeforeExpiration: 7,
+      notifyOnExpirationDay: true,
+      quantityThreshold: 1,
+    };
+  }
+);
+
+
     } finally {
       setLoading(false);
     }
