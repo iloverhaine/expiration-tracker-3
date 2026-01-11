@@ -9,7 +9,6 @@ import { Search, Scan, Upload } from "lucide-react";
 import {
   expirationRecordsService,
   initializeDatabase,
-  settingsService,
 } from "@/lib/db";
 import { scheduleDailyNotificationCheck } from "@/lib/notifications";
 import { importExpirationRecords } from "@/lib/importExport";
@@ -19,6 +18,7 @@ export default function HomePage() {
   const [records, setRecords] = useState<ExpirationRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   /* ---------------- INIT ---------------- */
   const loadRecords = async () => {
@@ -32,18 +32,14 @@ export default function HomePage() {
       await loadRecords();
 
       scheduleDailyNotificationCheck(
-  () => expirationRecordsService.getAll(),
-  async () => {
-    return {
-      notificationsEnabled: true,
-      daysBeforeExpiration: 7,
-      notifyOnExpirationDay: true,
-      quantityThreshold: 1,
-    };
-  }
-);
-
-
+        () => expirationRecordsService.getAll(),
+        async () => ({
+          notificationsEnabled: true,
+          daysBeforeExpiration: 7,
+          notifyOnExpirationDay: true,
+          quantityThreshold: 1,
+        })
+      );
     } finally {
       setLoading(false);
     }
@@ -68,6 +64,33 @@ export default function HomePage() {
       console.error(e);
       alert("Failed to import file");
     }
+  };
+
+  /* ---------------- BULK DELETE ---------------- */
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    const ok = confirm(
+      `Delete ${selectedIds.size} selected item(s)?`
+    );
+    if (!ok) return;
+
+    for (const id of selectedIds) {
+      await expirationRecordsService.delete(id);
+    }
+
+    clearSelection();
+    await loadRecords();
   };
 
   /* ---------------- HELPERS ---------------- */
@@ -155,7 +178,24 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ITEM LIST (OLD FORMAT) */}
+      {/* BULK DELETE BAR */}
+      {selectedIds.size > 0 && (
+        <div className="mx-4 mb-3 flex items-center justify-between rounded-md border border-red-200 bg-red-50 p-3">
+          <span className="text-sm text-red-700">
+            {selectedIds.size} selected
+          </span>
+
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleBulkDelete}
+          >
+            Delete Selected
+          </Button>
+        </div>
+      )}
+
+      {/* ITEM LIST */}
       <div className="px-4 pb-6 space-y-3">
         {filteredRecords.map((record) => {
           const days = getDaysUntilExpiration(record.expirationDate);
@@ -163,21 +203,37 @@ export default function HomePage() {
 
           return (
             <Link key={record.id} href={`/item/${record.id}`}>
-              <Card className="hover:shadow-md transition-shadow">
+              <Card
+                className="hover:shadow-md transition-shadow"
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).tagName === "INPUT") {
+                    e.preventDefault();
+                  }
+                }}
+              >
                 <CardContent className="p-4">
                   {/* TOP */}
                   <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="text-lg font-semibold">
-                        {record.itemName}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {record.description || "Created from scan"}
-                      </p>
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(record.id)}
+                        onChange={() => toggleSelect(record.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 h-4 w-4"
+                      />
+
+                      <div>
+                        <h3 className="text-lg font-semibold">
+                          {record.itemName}
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          {record.description || "Created from scan"}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {/* STATUS DOT */}
                       <span
                         className={`h-3 w-3 rounded-full ${
                           status === "expired"
@@ -187,8 +243,6 @@ export default function HomePage() {
                             : "bg-green-500"
                         }`}
                       />
-
-                      {/* QTY */}
                       <span className="px-2 py-1 text-xs rounded-full border">
                         Qty: {record.quantity}
                       </span>
@@ -220,7 +274,6 @@ export default function HomePage() {
                       </p>
                     </div>
 
-                    {/* STATUS BADGE */}
                     <span
                       className={`px-3 py-1 text-xs rounded-full capitalize ${
                         status === "expired"
