@@ -267,10 +267,8 @@ export default function HomePage() {
                         }`}
                       >
                         {status === "expired"
-                          ? `Expired ${Math.abs(days)} days ago`
-                          : status === "expiring"
-                          ? `Expires in ${days} days`
-                          : "Not expired"}
+                          ? "Time remaining: Expired"
+                          : `Time remaining: ${days} days`}
                       </p>
                     </div>
 
