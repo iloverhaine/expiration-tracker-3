@@ -102,7 +102,8 @@ export default function HomePage() {
     exp.setHours(0, 0, 0, 0);
 
     return Math.ceil(
-      (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+      (exp.getTime() - today.getTime()) /
+        (1000 * 60 * 60 * 24)
     );
   };
 
@@ -112,11 +113,30 @@ export default function HomePage() {
     return "ok";
   };
 
+  const formatTimeRemaining = (days: number) => {
+    if (days < 0) return "Expired";
+
+    const months = Math.floor(days / 30);
+    const remainingDays = days % 30;
+
+    if (months > 0 && remainingDays > 0) {
+      return `${months} month${months > 1 ? "s" : ""} ${remainingDays} day${remainingDays > 1 ? "s" : ""}`;
+    }
+
+    if (months > 0) {
+      return `${months} month${months > 1 ? "s" : ""}`;
+    }
+
+    return `${days} day${days !== 1 ? "s" : ""}`;
+  };
+
   /* ---------------- FILTER ---------------- */
   const filteredRecords = records.filter(
     (r) =>
       r.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (r.description ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.description ?? "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
       (r.barcode ?? "").includes(searchTerm)
   );
 
@@ -198,7 +218,9 @@ export default function HomePage() {
       {/* ITEM LIST */}
       <div className="px-4 pb-6 space-y-3">
         {filteredRecords.map((record) => {
-          const days = getDaysUntilExpiration(record.expirationDate);
+          const days = getDaysUntilExpiration(
+            record.expirationDate
+          );
           const status = getStatus(days);
 
           return (
@@ -206,7 +228,10 @@ export default function HomePage() {
               <Card
                 className="hover:shadow-md transition-shadow"
                 onClick={(e) => {
-                  if ((e.target as HTMLElement).tagName === "INPUT") {
+                  if (
+                    (e.target as HTMLElement).tagName ===
+                    "INPUT"
+                  ) {
                     e.preventDefault();
                   }
                 }}
@@ -218,8 +243,12 @@ export default function HomePage() {
                       <input
                         type="checkbox"
                         checked={selectedIds.has(record.id)}
-                        onChange={() => toggleSelect(record.id)}
-                        onClick={(e) => e.stopPropagation()}
+                        onChange={() =>
+                          toggleSelect(record.id)
+                        }
+                        onClick={(e) =>
+                          e.stopPropagation()
+                        }
                         className="mt-1 h-4 w-4"
                       />
 
@@ -228,7 +257,8 @@ export default function HomePage() {
                           {record.itemName}
                         </h3>
                         <p className="text-sm text-gray-500">
-                          {record.description || "Created from scan"}
+                          {record.description ||
+                            "Created from scan"}
                         </p>
                       </div>
                     </div>
@@ -266,9 +296,8 @@ export default function HomePage() {
                             : "text-green-600"
                         }`}
                       >
-                        {status === "expired"
-                          ? "Time remaining: Expired"
-                          : `Time remaining: ${days} days`}
+                        Time remaining:{" "}
+                        {formatTimeRemaining(days)}
                       </p>
                     </div>
 
