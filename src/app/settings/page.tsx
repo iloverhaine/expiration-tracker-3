@@ -32,7 +32,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<NotificationSettings>({
     daysBeforeExpiration: 7,
     notifyOnExpirationDay: true,
-    quantityThreshold: 2,
+    quantityThreshold: 0, // ✅ 0 = OFF
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -107,7 +107,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header (NO BACK BUTTON) */}
+      {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-4">
         <h1 className="text-xl font-bold text-gray-900">Settings</h1>
       </header>
@@ -195,13 +195,16 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <Label>Low quantity threshold</Label>
+              <Label>Low quantity threshold (0 = off)</Label>
               <Input
                 type="number"
-                min={1}
+                min={0} // ✅ allow OFF
                 value={settings.quantityThreshold}
                 onChange={(e) =>
-                  handleChange("quantityThreshold", Number(e.target.value))
+                  handleChange(
+                    "quantityThreshold",
+                    Number(e.target.value)
+                  )
                 }
                 className="w-24 mt-2"
               />
@@ -245,7 +248,6 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Save */}
         {saveMessage && (
           <div className="text-sm text-center text-green-700">
             {saveMessage}
