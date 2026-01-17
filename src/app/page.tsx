@@ -93,41 +93,36 @@ export default function HomePage() {
     await loadRecords();
   };
 
-  /* ---------------- HELPERS ---------------- */
-  const getDaysUntilExpiration = (date: Date) => {
+  /* ---------------- MONTH-ONLY EXPIRATION LOGIC ---------------- */
+  const getMonthStatus = (expirationDate: Date) => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
-    const exp = new Date(date);
-    exp.setHours(0, 0, 0, 0);
+    const currentTotalMonths =
+      today.getFullYear() * 12 + today.getMonth();
+    const expTotalMonths =
+      expirationDate.getFullYear() * 12 +
+      expirationDate.getMonth();
 
-    return Math.ceil(
-      (exp.getTime() - today.getTime()) /
-        (1000 * 60 * 60 * 24)
-    );
-  };
-
-  const getStatus = (days: number) => {
-    if (days < 0) return "expired";
-    if (days <= 7) return "expiring";
-    return "ok";
-  };
-
-  const formatTimeRemaining = (days: number) => {
-    if (days < 0) return "Expired";
-
-    const months = Math.floor(days / 30);
-    const remainingDays = days % 30;
-
-    if (months > 0 && remainingDays > 0) {
-      return `${months} month${months > 1 ? "s" : ""} ${remainingDays} day${remainingDays > 1 ? "s" : ""}`;
+    // expired if same month or past
+    if (currentTotalMonths >= expTotalMonths) {
+      return {
+        status: "expired" as const,
+        label: "Expired",
+      };
     }
 
-    if (months > 0) {
-      return `${months} month${months > 1 ? "s" : ""}`;
-    }
+    const monthsRemaining =
+      expTotalMonths - currentTotalMonths;
 
-    return `${days} day${days !== 1 ? "s" : ""}`;
+    return {
+      status:
+        monthsRemaining <= 2
+          ? ("expiring" as const)
+          : ("ok" as const),
+      label: `Time remaining: ${monthsRemaining} month${
+        monthsRemaining > 1 ? "s" : ""
+      }`,
+    };
   };
 
   /* ---------------- FILTER ---------------- */
@@ -218,24 +213,14 @@ export default function HomePage() {
       {/* ITEM LIST */}
       <div className="px-4 pb-6 space-y-3">
         {filteredRecords.map((record) => {
-          const days = getDaysUntilExpiration(
+          const result = getMonthStatus(
             record.expirationDate
           );
-          const status = getStatus(days);
+          const status = result.status;
 
           return (
             <Link key={record.id} href={`/item/${record.id}`}>
-              <Card
-                className="hover:shadow-md transition-shadow"
-                onClick={(e) => {
-                  if (
-                    (e.target as HTMLElement).tagName ===
-                    "INPUT"
-                  ) {
-                    e.preventDefault();
-                  }
-                }}
-              >
+              <Card className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4">
                   {/* TOP */}
                   <div className="flex justify-between items-start">
@@ -296,8 +281,7 @@ export default function HomePage() {
                             : "text-green-600"
                         }`}
                       >
-                        Time remaining:{" "}
-                        {formatTimeRemaining(days)}
+                        {result.label}
                       </p>
                     </div>
 
