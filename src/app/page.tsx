@@ -31,13 +31,14 @@ export default function HomePage() {
       await initializeDatabase();
       await loadRecords();
 
+      // ✅ LOW QUANTITY NOTIFICATIONS DISABLED HERE
       scheduleDailyNotificationCheck(
         () => expirationRecordsService.getAll(),
         async () => ({
           notificationsEnabled: true,
           daysBeforeExpiration: 7,
           notifyOnExpirationDay: true,
-          quantityThreshold: 1,
+          quantityThreshold: 0, // ✅ OFF
         })
       );
     } finally {
