@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Search, Scan, Upload } from "lucide-react";
+import { Search, Scan, Upload, Bell } from "lucide-react";
 import {
   CheckCircle,
   AlertTriangle,
@@ -25,6 +25,7 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showNotifications, setShowNotifications] = useState(true);
 
   /* ---------------- INIT ---------------- */
   const loadRecords = async () => {
@@ -159,6 +160,15 @@ export default function HomePage() {
       (r.barcode ?? "").includes(searchTerm)
   );
 
+  /* ---------------- NOTIFICATIONS DATA ---------------- */
+  const expiredItems = records.filter(
+    (r) => getMonthStatus(r.expirationDate).status === "expired"
+  );
+
+  const pushItems = records.filter(
+    (r) => getMonthStatus(r.expirationDate).status === "push"
+  );
+
   /* ---------------- LOADING ---------------- */
   if (loading) {
     return (
@@ -171,6 +181,45 @@ export default function HomePage() {
   /* ---------------- UI ---------------- */
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* NOTIFICATIONS PANEL */}
+      {showNotifications && (expiredItems.length > 0 || pushItems.length > 0) && (
+        <div className="mx-4 mt-4 mb-2 rounded-lg border border-yellow-300 bg-yellow-50 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-yellow-700" />
+              <h3 className="font-semibold text-yellow-800">
+                Expiration Alerts
+              </h3>
+            </div>
+
+            <button
+              onClick={() => setShowNotifications(false)}
+              className="text-xs text-yellow-700 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          <div className="mt-2 text-sm text-yellow-800">
+            <p>🔴 Expired: {expiredItems.length}</p>
+            <p>🟡 Expiring Soon: {pushItems.length}</p>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {[...expiredItems, ...pushItems].slice(0, 5).map((item) => (
+              <Link
+                key={item.id}
+                href={`/item/${item.id}`}
+                className="block rounded-md bg-white px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                {item.itemName} — expires{" "}
+                {item.expirationDate.toLocaleDateString()}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ACTIONS */}
       <div className="p-4 space-y-3">
         <div className="grid grid-cols-2 gap-3">
@@ -217,29 +266,10 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* BULK DELETE BAR */}
-      {selectedIds.size > 0 && (
-        <div className="mx-4 mb-3 flex items-center justify-between rounded-md border border-red-200 bg-red-50 p-3">
-          <span className="text-sm text-red-700">
-            {selectedIds.size} selected
-          </span>
-
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleBulkDelete}
-          >
-            Delete Selected
-          </Button>
-        </div>
-      )}
-
       {/* ITEM LIST */}
       <div className="px-4 pb-6 space-y-3">
         {filteredRecords.map((record) => {
-          const result = getMonthStatus(
-            record.expirationDate
-          );
+          const result = getMonthStatus(record.expirationDate);
           const status = result.status;
           const StatusIcon = result.icon;
 
@@ -258,30 +288,15 @@ export default function HomePage() {
                 className={`transition-shadow hover:shadow-lg ${statusBorderClass}`}
               >
                 <CardContent className="p-4">
-                  {/* TOP */}
                   <div className="flex justify-between items-start">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(record.id)}
-                        onChange={() =>
-                          toggleSelect(record.id)
-                        }
-                        onClick={(e) =>
-                          e.stopPropagation()
-                        }
-                        className="mt-1 h-4 w-4"
-                      />
-
-                      <div>
-                        <h3 className="text-lg font-semibold">
-                          {record.itemName}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {record.description ||
-                            "Created from scan"}
-                        </p>
-                      </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">
+                        {record.itemName}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {record.description ||
+                          "Created from scan"}
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -303,7 +318,6 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* BOTTOM */}
                   <div className="mt-4 flex justify-between items-end">
                     <div>
                       <p className="text-sm text-gray-600">
