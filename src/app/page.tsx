@@ -114,7 +114,6 @@ export default function HomePage() {
 
     const safeMonths = Math.max(0, monthsRemaining);
 
-    // 1 month or less → Expired
     if (safeMonths <= 1) {
       return {
         status: "expired" as const,
@@ -124,7 +123,6 @@ export default function HomePage() {
       };
     }
 
-    // 3 months or less → For Push Item/Items
     if (safeMonths <= 3) {
       return {
         status: "push" as const,
@@ -134,7 +132,6 @@ export default function HomePage() {
       };
     }
 
-    // Exactly 4 months → For Return this Month
     if (safeMonths === 4) {
       return {
         status: "return" as const,
@@ -144,7 +141,6 @@ export default function HomePage() {
       };
     }
 
-    // More than 4 months → Good
     return {
       status: "good" as const,
       label: "Good",
@@ -247,9 +243,20 @@ export default function HomePage() {
           const status = result.status;
           const StatusIcon = result.icon;
 
+          const statusBorderClass =
+            status === "expired"
+              ? "border-2 border-red-400 shadow-[0_0_12px_rgba(239,68,68,0.35)]"
+              : status === "push"
+              ? "border-2 border-yellow-400 shadow-[0_0_12px_rgba(234,179,8,0.35)]"
+              : status === "return"
+              ? "border-2 border-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.35)]"
+              : "border border-green-300";
+
           return (
             <Link key={record.id} href={`/item/${record.id}`}>
-              <Card className="hover:shadow-md transition-shadow">
+              <Card
+                className={`transition-shadow hover:shadow-lg ${statusBorderClass}`}
+              >
                 <CardContent className="p-4">
                   {/* TOP */}
                   <div className="flex justify-between items-start">
@@ -298,7 +305,6 @@ export default function HomePage() {
 
                   {/* BOTTOM */}
                   <div className="mt-4 flex justify-between items-end">
-                    {/* LEFT: Expiry + Time Remaining */}
                     <div>
                       <p className="text-sm text-gray-600">
                         Expires:{" "}
@@ -316,7 +322,6 @@ export default function HomePage() {
                       </p>
                     </div>
 
-                    {/* RIGHT: Status Badge */}
                     <span
                       className={`px-3 py-1 text-xs rounded-full ${
                         status === "expired"
