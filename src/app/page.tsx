@@ -37,14 +37,13 @@ export default function HomePage() {
       await initializeDatabase();
       await loadRecords();
 
-      // ✅ LOW QUANTITY NOTIFICATIONS DISABLED HERE
       scheduleDailyNotificationCheck(
         () => expirationRecordsService.getAll(),
         async () => ({
           notificationsEnabled: true,
           daysBeforeExpiration: 7,
           notifyOnExpirationDay: true,
-          quantityThreshold: 0, // ✅ OFF
+          quantityThreshold: 0,
         })
       );
     } finally {
@@ -113,29 +112,34 @@ export default function HomePage() {
     const monthsRemaining =
       expTotalMonths - currentTotalMonths;
 
+    const safeMonths = Math.max(0, monthsRemaining);
+
     // 1 month or less → Expired
-    if (monthsRemaining <= 1) {
+    if (safeMonths <= 1) {
       return {
         status: "expired" as const,
         label: "Expired",
+        monthsRemaining: safeMonths,
         icon: AlertCircle,
       };
     }
 
     // 3 months or less → For Push Item/Items
-    if (monthsRemaining <= 3) {
+    if (safeMonths <= 3) {
       return {
         status: "push" as const,
         label: "For Push Item/Items",
+        monthsRemaining: safeMonths,
         icon: AlertTriangle,
       };
     }
 
     // Exactly 4 months → For Return this Month
-    if (monthsRemaining === 4) {
+    if (safeMonths === 4) {
       return {
         status: "return" as const,
         label: "For Return this Month",
+        monthsRemaining: safeMonths,
         icon: RotateCcw,
       };
     }
@@ -144,6 +148,7 @@ export default function HomePage() {
     return {
       status: "good" as const,
       label: "Good",
+      monthsRemaining: safeMonths,
       icon: CheckCircle,
     };
   };
@@ -293,27 +298,25 @@ export default function HomePage() {
 
                   {/* BOTTOM */}
                   <div className="mt-4 flex justify-between items-end">
+                    {/* LEFT: Expiry + Time Remaining */}
                     <div>
                       <p className="text-sm text-gray-600">
                         Expires:{" "}
                         {record.expirationDate.toLocaleDateString()}
                       </p>
 
-                      <p
-                        className={`text-sm font-medium ${
-                          status === "expired"
-                            ? "text-red-600"
-                            : status === "push"
-                            ? "text-yellow-600"
-                            : status === "return"
-                            ? "text-blue-600"
-                            : "text-green-600"
-                        }`}
-                      >
-                        {result.label}
+                      <p className="text-sm text-gray-500">
+                        Time remaining:{" "}
+                        <span className="font-medium">
+                          {result.monthsRemaining} month
+                          {result.monthsRemaining !== 1
+                            ? "s"
+                            : ""}
+                        </span>
                       </p>
                     </div>
 
+                    {/* RIGHT: Status Badge */}
                     <span
                       className={`px-3 py-1 text-xs rounded-full ${
                         status === "expired"
