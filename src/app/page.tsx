@@ -7,6 +7,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Search, Scan, Upload } from "lucide-react";
 import {
+  CheckCircle,
+  AlertTriangle,
+  RotateCcw,
+  AlertCircle,
+} from "lucide-react";
+import {
   expirationRecordsService,
   initializeDatabase,
 } from "@/lib/db";
@@ -104,25 +110,41 @@ export default function HomePage() {
       expirationDate.getFullYear() * 12 +
       expirationDate.getMonth();
 
-    // expired if same month or past
-    if (currentTotalMonths >= expTotalMonths) {
-      return {
-        status: "expired" as const,
-        label: "Expired",
-      };
-    }
-
     const monthsRemaining =
       expTotalMonths - currentTotalMonths;
 
+    // 1 month or less → Expired
+    if (monthsRemaining <= 1) {
+      return {
+        status: "expired" as const,
+        label: "Expired",
+        icon: AlertCircle,
+      };
+    }
+
+    // 3 months or less → For Push Item/Items
+    if (monthsRemaining <= 3) {
+      return {
+        status: "push" as const,
+        label: "For Push Item/Items",
+        icon: AlertTriangle,
+      };
+    }
+
+    // Exactly 4 months → For Return this Month
+    if (monthsRemaining === 4) {
+      return {
+        status: "return" as const,
+        label: "For Return this Month",
+        icon: RotateCcw,
+      };
+    }
+
+    // More than 4 months → Good
     return {
-      status:
-        monthsRemaining <= 2
-          ? ("expiring" as const)
-          : ("ok" as const),
-      label: `Time remaining: ${monthsRemaining} month${
-        monthsRemaining > 1 ? "s" : ""
-      }`,
+      status: "good" as const,
+      label: "Good",
+      icon: CheckCircle,
     };
   };
 
@@ -218,6 +240,7 @@ export default function HomePage() {
             record.expirationDate
           );
           const status = result.status;
+          const StatusIcon = result.icon;
 
           return (
             <Link key={record.id} href={`/item/${record.id}`}>
@@ -250,15 +273,18 @@ export default function HomePage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`h-3 w-3 rounded-full ${
+                      <StatusIcon
+                        className={`h-5 w-5 ${
                           status === "expired"
-                            ? "bg-red-500"
-                            : status === "expiring"
-                            ? "bg-yellow-400"
-                            : "bg-green-500"
+                            ? "text-red-600"
+                            : status === "push"
+                            ? "text-yellow-600"
+                            : status === "return"
+                            ? "text-blue-600"
+                            : "text-green-600"
                         }`}
                       />
+
                       <span className="px-2 py-1 text-xs rounded-full border">
                         Qty: {record.quantity}
                       </span>
@@ -277,8 +303,10 @@ export default function HomePage() {
                         className={`text-sm font-medium ${
                           status === "expired"
                             ? "text-red-600"
-                            : status === "expiring"
+                            : status === "push"
                             ? "text-yellow-600"
+                            : status === "return"
+                            ? "text-blue-600"
                             : "text-green-600"
                         }`}
                       >
@@ -287,15 +315,17 @@ export default function HomePage() {
                     </div>
 
                     <span
-                      className={`px-3 py-1 text-xs rounded-full capitalize ${
+                      className={`px-3 py-1 text-xs rounded-full ${
                         status === "expired"
                           ? "bg-red-100 text-red-700"
-                          : status === "expiring"
+                          : status === "push"
                           ? "bg-yellow-100 text-yellow-700"
+                          : status === "return"
+                          ? "bg-blue-100 text-blue-700"
                           : "bg-green-100 text-green-700"
                       }`}
                     >
-                      {status}
+                      {result.label}
                     </span>
                   </div>
                 </CardContent>
