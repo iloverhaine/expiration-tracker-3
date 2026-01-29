@@ -26,6 +26,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showNotifications, setShowNotifications] = useState(true);
+  const [importMessage, setImportMessage] = useState<string>("");
 
   /* ---------------- INIT ---------------- */
   const loadRecords = async () => {
@@ -67,9 +68,10 @@ export default function HomePage() {
     try {
       await importExpirationRecords(file);
       await loadRecords();
+      setImportMessage("File imported successfully!");
     } catch (e) {
       console.error(e);
-      alert("Failed to import file");
+      setImportMessage("Failed to import file. Please try again.");
     }
   };
 
@@ -269,6 +271,15 @@ export default function HomePage() {
         <div className="text-sm text-gray-600">
           <p>Total records: {records.length}</p>
         </div>
+
+        {/* IMPORT SUCCESS OR ERROR MESSAGE */}
+        {importMessage && (
+          <div className="mt-2 text-sm text-center font-medium text-gray-800">
+            <p className={importMessage.includes("success") ? "text-green-500" : "text-red-500"}>
+              {importMessage}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ITEM LIST */}
