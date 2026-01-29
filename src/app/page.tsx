@@ -66,9 +66,34 @@ export default function HomePage() {
   /* ---------------- IMPORT ---------------- */
   const handleImport = async (file: File) => {
     try {
-      await importExpirationRecords(file);
+      // Import records from the file
+      const importedRecords = await importExpirationRecords(file);
+
+      // Load current records from the database
+      const currentRecords = await expirationRecordsService.getAll();
+
+      // Filter out records that already exist in the database (based on barcode, description, quantity, expirationDate)
+      const newRecords = importedRecords.filter((importedRecord) => {
+        return !currentRecords.some((currentRecord) =>
+          currentRecord.barcode === importedRecord.barcode &&
+          currentRecord.description === importedRecord.description &&
+          currentRecord.quantity === importedRecord.quantity &&
+          currentRecord.expirationDate.toISOString() === importedRecord.expirationDate.toISOString()
+        );
+      });
+
+      // If there are new records to be added, proceed to add them
+      if (newRecords.length > 0) {
+        // Proceed with adding the new records (you can use a service to save them)
+        await expirationRecordsService.addBulk(newRecords); // Assuming a method for bulk insert
+        setImportMessage("File imported successfully! Some records were skipped due to duplicates.");
+      } else {
+        setImportMessage("No new records to import. All records are duplicates.");
+      }
+
+      // Reload the records to reflect the imported data
       await loadRecords();
-      setImportMessage("File imported successfully!");
+
     } catch (e) {
       console.error(e);
       setImportMessage("Failed to import file. Please try again.");
