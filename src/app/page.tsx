@@ -264,6 +264,11 @@ export default function HomePage() {
             className="pl-10"
           />
         </div>
+
+        {/* DISPLAY NUMBER OF RECORDS */}
+        <div className="text-sm text-gray-600">
+          <p>Total records: {records.length}</p>
+        </div>
       </div>
 
       {/* ITEM LIST */}
