@@ -67,14 +67,20 @@ export default function HomePage() {
   const handleImport = async (file: File) => {
     try {
       // Import records from the file
-      const importedRecords = await importExpirationRecords(file);
+      const importedRecords = await importExpirationRecords(file) ?? [];
+
+      // Ensure that the imported records are an array and not void or undefined
+      if (importedRecords.length === 0) {
+        setImportMessage("Failed to import file. No valid records found.");
+        return;
+      }
 
       // Load current records from the database
       const currentRecords = await expirationRecordsService.getAll();
 
       // Filter out records that already exist in the database (based on barcode, description, quantity, expirationDate)
-      const newRecords = importedRecords.filter((importedRecord) => {
-        return !currentRecords.some((currentRecord) =>
+      const newRecords = importedRecords.filter((importedRecord: ExpirationRecord) => {
+        return !currentRecords.some((currentRecord: ExpirationRecord) =>
           currentRecord.barcode === importedRecord.barcode &&
           currentRecord.description === importedRecord.description &&
           currentRecord.quantity === importedRecord.quantity &&
@@ -84,8 +90,10 @@ export default function HomePage() {
 
       // If there are new records to be added, proceed to add them
       if (newRecords.length > 0) {
-        // Proceed with adding the new records (you can use a service to save them)
-        await expirationRecordsService.addBulk(newRecords); // Assuming a method for bulk insert
+        // Fallback to create method if addBulk is not available
+        for (const record of newRecords) {
+          await expirationRecordsService.create(record);
+        }
         setImportMessage("File imported successfully! Some records were skipped due to duplicates.");
       } else {
         setImportMessage("No new records to import. All records are duplicates.");
@@ -300,9 +308,7 @@ export default function HomePage() {
         {/* IMPORT SUCCESS OR ERROR MESSAGE */}
         {importMessage && (
           <div className="mt-2 text-sm text-center font-medium text-gray-800">
-            <p className={importMessage.includes("success") ? "text-green-500" : "text-red-500"}>
-              {importMessage}
-            </p>
+            <p className={importMessage.includes("success") ? "text-green-500" : "text-red-500"}>{importMessage}</p>
           </div>
         )}
       </div>
