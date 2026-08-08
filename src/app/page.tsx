@@ -20,7 +20,6 @@ import {
   CheckCircle,
   MoreVertical,
   RotateCcw,
-  Scan,
   Search,
   Trash2,
   Upload,
@@ -28,6 +27,7 @@ import {
 import {
   expirationRecordsService,
   initializeDatabase,
+  productDataService,
 } from "@/lib/db";
 import { formatBarcodeForDisplay } from "@/lib/barcode";
 import { scheduleDailyNotificationCheck } from "@/lib/notifications";
@@ -41,11 +41,23 @@ export default function HomePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showNotifications, setShowNotifications] = useState(true);
   const [importMessage, setImportMessage] = useState<string>("");
+  const [productDescriptions, setProductDescriptions] = useState<Map<string, string>>(
+    new Map()
+  );
 
   /* ---------------- INIT ---------------- */
   const loadRecords = async () => {
-    const data = await expirationRecordsService.getAll();
+    const [data, products] = await Promise.all([
+      expirationRecordsService.getAll(),
+      productDataService.getAll(),
+    ]);
+
     setRecords(data);
+    setProductDescriptions(
+      new Map(
+        products.map((product) => [product.barcode.trim(), product.description?.trim() ?? ""])
+      )
+    );
   };
 
   const initializeApp = useCallback(async () => {
@@ -89,25 +101,27 @@ export default function HomePage() {
 
       const currentRecords = await expirationRecordsService.getAll();
 
-      const newRecords = importedRecords.filter(
-        (importedRecord: ExpirationRecord) => {
-          return !currentRecords.some(
-            (currentRecord: ExpirationRecord) =>
-              currentRecord.barcode === importedRecord.barcode &&
-              currentRecord.description === importedRecord.description &&
-              currentRecord.quantity === importedRecord.quantity &&
-              currentRecord.expirationDate.toISOString() ===
-                importedRecord.expirationDate.toISOString()
-          );
-        }
-      );
+      const newRecords = importedRecords.filter((importedRecord) => {
+        return !currentRecords.some(
+          (currentRecord) =>
+            currentRecord.barcode.trim() === importedRecord.barcode.trim() &&
+            currentRecord.itemName.trim().toLowerCase() ===
+              importedRecord.itemName.trim().toLowerCase() &&
+            currentRecord.quantity === importedRecord.quantity &&
+            currentRecord.expirationDate.toISOString() ===
+              importedRecord.expirationDate.toISOString()
+        );
+      });
+
+      for (const record of newRecords) {
+        await expirationRecordsService.create(record);
+      }
 
       if (newRecords.length > 0) {
-        for (const record of newRecords) {
-          await expirationRecordsService.create(record);
-        }
         setImportMessage(
-          "File imported successfully! Some records were skipped due to duplicates."
+          newRecords.length === importedRecords.length
+            ? "File imported successfully."
+            : "File imported successfully! Some records were skipped due to duplicates."
         );
       } else {
         setImportMessage(
@@ -212,13 +226,20 @@ export default function HomePage() {
 
   /* ---------------- FILTER ---------------- */
   const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredRecords = records.filter(
-    (r) =>
+  const getDatabaseDescription = (record: ExpirationRecord) => {
+    const importedDescription = productDescriptions.get(record.barcode.trim());
+    return importedDescription || record.description?.trim() || "";
+  };
+
+  const filteredRecords = records.filter((r) => {
+    const displayDescription = getDatabaseDescription(r).toLowerCase();
+    return (
       r.itemName.toLowerCase().includes(normalizedSearch) ||
-      (r.description ?? "").toLowerCase().includes(normalizedSearch) ||
+      displayDescription.includes(normalizedSearch) ||
       (r.notes ?? "").toLowerCase().includes(normalizedSearch) ||
       (r.barcode ?? "").toLowerCase().includes(normalizedSearch)
-  );
+    );
+  });
 
   const allFilteredSelected =
     filteredRecords.length > 0 &&
@@ -298,14 +319,7 @@ export default function HomePage() {
 
       {/* ACTIONS */}
       <div className="p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <Link href="/scan">
-            <Button className="w-full h-12 bg-blue-600 hover:bg-blue-700">
-              <Scan className="h-5 w-5 mr-2" />
-              Scan Barcode
-            </Button>
-          </Link>
-
+        <div>
           <Button
             variant="outline"
             className="w-full h-12"
@@ -399,9 +413,10 @@ export default function HomePage() {
           const status = result.status;
           const StatusIcon = result.icon;
           const isSelected = selectedIds.has(record.id);
+          const displayDescription = getDatabaseDescription(record);
           const hasUsefulDescription =
-            record.description?.trim() &&
-            record.description.trim().toLowerCase() !== "created from scan";
+            displayDescription.length > 0 &&
+            displayDescription.toLowerCase() !== "created from scan";
 
           const statusBorderClass =
             status === "expired"
@@ -433,7 +448,7 @@ export default function HomePage() {
                     </p>
                     {hasUsefulDescription && (
                       <p className="mt-1 text-sm text-gray-500">
-                        {record.description}
+                        {displayDescription}
                       </p>
                     )}
                   </Link>

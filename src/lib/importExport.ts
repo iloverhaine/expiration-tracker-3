@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { expirationRecordsService } from "@/lib/db";
+import type { ExpirationRecord } from "@/types";
 
 /**
  * Convert Excel date OR string into JS Date
@@ -25,7 +26,7 @@ export async function importExpirationRecords(file: File) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<any>(sheet);
 
-  let imported = 0;
+  const importedRecords: Array<Omit<ExpirationRecord, "id" | "remainingDays" | "status">> = [];
 
   for (const raw of rows) {
     // 🔑 MAP EXCEL HEADERS HERE
@@ -42,18 +43,29 @@ export async function importExpirationRecords(file: File) {
       continue;
     }
 
-    await expirationRecordsService.create({
+    const record = {
       barcode: barcode.toString(),
       itemName: itemName.toString(),
       description: description.toString(),
       quantity,
       expirationDate,
       dateCreated: new Date(),
-      notes: "",
-    });
+      notes: String(
+        raw.Notes ??
+        raw.Note ??
+        raw.Remarks ??
+        raw.Remark ??
+        raw.notes ??
+        raw.note ??
+        raw.remarks ??
+        raw.remark ??
+        ""
+      ).trim(),
+    };
 
-    imported++;
+    importedRecords.push(record);
   }
 
-  console.log(`Imported ${imported} records`);
+  console.log(`Imported ${importedRecords.length} records`);
+  return importedRecords;
 }
