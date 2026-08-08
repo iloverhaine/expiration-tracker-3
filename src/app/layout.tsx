@@ -59,9 +59,13 @@ export default function RootLayout({
                 </button>
               )}
 
-              <span className="text-lg font-bold">
+              <Link
+                href="/"
+                className="text-lg font-bold hover:opacity-80 transition-opacity"
+                aria-label="Go to home"
+              >
                 Expiration Tracker
-              </span>
+              </Link>
             </div>
 
             <Link
