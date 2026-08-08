@@ -35,6 +35,44 @@ class ExpirationTrackerDB extends Dexie {
 
 export const db = new ExpirationTrackerDB();
 
+/**
+ * Canonical barcode key used for matching imported product data with
+ * expiration records. Handles Excel scientific notation and formatting.
+ */
+export const normalizeBarcodeForMatch = (value: unknown): string => {
+  let raw = String(value ?? "").trim().replace(/\s+/g, "");
+
+  if (!raw) return "";
+
+  // Excel may expose a long barcode as scientific notation.
+  if (/^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(raw)) {
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) {
+      raw = numeric.toLocaleString("fullwide", {
+        useGrouping: false,
+        maximumFractionDigits: 0,
+      });
+    }
+  }
+
+  // Remove separators such as spaces, hyphens, and decimal suffixes.
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+
+  // Also make a zero-trimmed key useful for files that lost leading zeros.
+  return digits;
+};
+
+export const barcodeMatches = (a: unknown, b: unknown): boolean => {
+  const left = normalizeBarcodeForMatch(a);
+  const right = normalizeBarcodeForMatch(b);
+
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  return left.replace(/^0+/, "") === right.replace(/^0+/, "");
+};
+
 // Utility functions for date conversion
 export const convertToExpirationRecord = (dbRecord: DBExpirationRecord): ExpirationRecord => {
   const expirationDate = new Date(dbRecord.expirationDate);

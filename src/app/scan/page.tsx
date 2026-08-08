@@ -10,6 +10,7 @@ import { Search } from "lucide-react";
 import {
   expirationRecordsService,
   productDataService,
+  normalizeBarcodeForMatch,
 } from "@/lib/db";
 import type { ProductData } from "@/types";
 
@@ -95,11 +96,17 @@ export default function ScanPage() {
 
     try {
       const normalizedBarcode = barcode.replace(/\D/g, "").slice(0, 12);
+      const products = await productDataService.getAll();
+      const matchedProduct = products.find(
+        (product) =>
+          normalizeBarcodeForMatch(product.barcode) ===
+          normalizeBarcodeForMatch(normalizedBarcode || barcode)
+      );
 
       const id = await expirationRecordsService.create({
         barcode: normalizedBarcode || barcode,
-        itemName: productName || "Scanned Item",
-        description: "",
+        itemName: matchedProduct?.itemName || productName || "Scanned Item",
+        description: matchedProduct?.description?.trim() || "",
         quantity: 1,
         expirationDate: new Date(),
         dateCreated: new Date(),

@@ -28,6 +28,7 @@ import {
   expirationRecordsService,
   initializeDatabase,
   productDataService,
+  normalizeBarcodeForMatch,
 } from "@/lib/db";
 import { formatBarcodeForDisplay } from "@/lib/barcode";
 import { scheduleDailyNotificationCheck } from "@/lib/notifications";
@@ -53,11 +54,15 @@ export default function HomePage() {
     ]);
 
     setRecords(data);
-    setProductDescriptions(
-      new Map(
-        products.map((product) => [product.barcode.trim(), product.description?.trim() ?? ""])
-      )
-    );
+    const descriptionMap = new Map<string, string>();
+    for (const product of products) {
+      const key = normalizeBarcodeForMatch(product.barcode);
+      const description = product.description?.trim() ?? "";
+      if (key && description) {
+        descriptionMap.set(key, description);
+      }
+    }
+    setProductDescriptions(descriptionMap);
   };
 
   const initializeApp = useCallback(async () => {
@@ -227,8 +232,22 @@ export default function HomePage() {
   /* ---------------- FILTER ---------------- */
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const getDatabaseDescription = (record: ExpirationRecord) => {
-    const importedDescription = productDescriptions.get(record.barcode.trim());
-    return importedDescription || record.description?.trim() || "";
+    const importedDescription =
+      productDescriptions.get(normalizeBarcodeForMatch(record.barcode)) || "";
+
+    // The imported Product Database is authoritative for the description.
+    // Keep the record description only as a fallback for older records.
+    if (
+      importedDescription &&
+      importedDescription.toLowerCase() !== "created from scan"
+    ) {
+      return importedDescription;
+    }
+
+    const recordDescription = record.description?.trim() || "";
+    return recordDescription.toLowerCase() === "created from scan"
+      ? ""
+      : recordDescription;
   };
 
   const filteredRecords = records.filter((r) => {
@@ -447,7 +466,8 @@ export default function HomePage() {
                       </span>
                     </p>
                     {hasUsefulDescription && (
-                      <p className="mt-1 text-sm text-gray-500">
+                      <p className="mt-1 text-sm text-gray-600">
+                        <span className="font-medium text-gray-700">Description:</span>{" "}
                         {displayDescription}
                       </p>
                     )}
@@ -503,8 +523,8 @@ export default function HomePage() {
                 </div>
 
                 {record.notes?.trim() && (
-                  <div className="mt-3 rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700">
-                    <span className="font-medium">Remarks:</span>{" "}
+                  <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                    <span className="font-medium">Notes / Remarks:</span>{" "}
                     <span className="whitespace-pre-wrap break-words">
                       {record.notes.trim()}
                     </span>

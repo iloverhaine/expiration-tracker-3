@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Edit, Trash2, Calendar, Package, BarChart3, StickyNote } from "lucide-react";
-import { expirationRecordsService } from "@/lib/db";
+import { expirationRecordsService, productDataService, normalizeBarcodeForMatch } from "@/lib/db";
 import { formatBarcodeForDisplay } from "@/lib/barcode";
 import type { ExpirationRecord } from "@/types";
 
@@ -20,11 +20,22 @@ function ItemDetailsContent() {
   const [item, setItem] = useState<ExpirationRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [databaseDescription, setDatabaseDescription] = useState("");
 
   const loadItem = useCallback(async () => {
     try {
       const record = await expirationRecordsService.getById(itemId);
       setItem(record);
+
+      if (record) {
+        const products = await productDataService.getAll();
+        const matchingProduct = products.find(
+          (product) =>
+            normalizeBarcodeForMatch(product.barcode) ===
+            normalizeBarcodeForMatch(record.barcode)
+        );
+        setDatabaseDescription(matchingProduct?.description?.trim() || "");
+      }
     } catch (error) {
       console.error('Error loading item:', error);
     } finally {
@@ -145,8 +156,14 @@ function ItemDetailsContent() {
                 <CardTitle className="text-2xl font-bold text-gray-900 mb-2">
                   {item.itemName}
                 </CardTitle>
-                {item.description && (
-                  <p className="text-gray-600 text-lg">{item.description}</p>
+                {(databaseDescription || item.description) && (
+                  <p className="text-gray-600 text-lg">
+                    {databaseDescription || (
+                      item.description.toLowerCase() === "created from scan"
+                        ? ""
+                        : item.description
+                    )}
+                  </p>
                 )}
               </div>
               <Badge 
