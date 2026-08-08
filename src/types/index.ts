@@ -17,6 +17,8 @@ export interface ProductData {
   barcode: string; // primary key
   itemName: string;
   description: string;
+  /** Canonical lookup key used for fast barcode matching. */
+  matchKey?: string;
 }
 
 export interface NotificationSettings {

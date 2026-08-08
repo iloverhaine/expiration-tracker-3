@@ -17,15 +17,21 @@ export default function ImportPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ExcelImportResult | null>(null);
   const [productData, setProductData] = useState<ProductData[]>([]);
+  const [productCount, setProductCount] = useState(0);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
   const [editingProduct, setEditingProduct] = useState<ProductData | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadProductData = async () => {
     setIsLoadingData(true);
     try {
-      const data = await productDataService.getAll();
+      const [data, count] = await Promise.all([
+        productDataService.getFirst(100),
+        productDataService.count(),
+      ]);
       setProductData(data);
+      setProductCount(count);
     } catch (error) {
       console.error('Error loading product data:', error);
     } finally {
@@ -49,6 +55,7 @@ export default function ImportPage() {
     }
 
     setIsImporting(true);
+    setImportProgress(0);
     setImportResult(null);
 
     try {
@@ -62,11 +69,17 @@ export default function ImportPage() {
 
       if (result.success && result.data) {
         // Import to database
-        const dbResult = await productDataService.bulkCreate(result.data);
+        const dbResult = await productDataService.bulkCreate(result.data, (processed, total) => {
+          setImportProgress(total ? Math.round((processed / total) * 100) : 100);
+        });
         setImportResult({
           success: true,
           imported: dbResult.success,
-          errors: [...result.errors, ...dbResult.errors]
+          errors: [
+            ...result.errors,
+            ...dbResult.errors,
+            ...(dbResult.skipped ? [`Skipped ${dbResult.skipped} rows with blank barcodes`] : [])
+          ]
         });
         
         // Reload product data
@@ -82,6 +95,7 @@ export default function ImportPage() {
       });
     } finally {
       setIsImporting(false);
+      setImportProgress(100);
       // Clear file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -138,6 +152,7 @@ export default function ImportPage() {
     try {
       await productDataService.clear();
       setProductData([]);
+      setProductCount(0);
       setImportResult(null);
     } catch (error) {
       console.error('Error clearing data:', error);
@@ -275,7 +290,7 @@ export default function ImportPage() {
               <CardTitle>Current Product Database</CardTitle>
               <div className="flex items-center space-x-2">
                 <Badge variant="outline">
-                  {productData.length} products
+                  {productCount} products
                 </Badge>
                 {productData.length > 0 && (
                   <Button
@@ -296,7 +311,7 @@ export default function ImportPage() {
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
                 <p className="text-gray-600">Loading product data...</p>
               </div>
-            ) : productData.length === 0 ? (
+            ) : productCount === 0 ? (
               <div className="text-center py-8">
                 <FileSpreadsheet className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600 mb-4">No product data imported yet</p>
@@ -307,6 +322,11 @@ export default function ImportPage() {
               </div>
             ) : (
               <div className="space-y-3">
+                {productCount > productData.length && (
+                  <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                    Showing the first {productData.length} products to keep Safari fast. Total database: {productCount}.
+                  </div>
+                )}
                 {productData.map((product) => (
                   <div key={product.barcode}>
                     {editingProduct?.barcode === product.barcode ? (

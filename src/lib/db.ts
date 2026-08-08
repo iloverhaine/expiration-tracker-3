@@ -9,7 +9,7 @@ export interface DBExpirationRecord extends Omit<ExpirationRecord, 'expirationDa
   dateCreated: string; // ISO string for storage
 }
 
-export type DBProductData = ProductData;
+export type DBProductData = ProductData & { matchKey: string };
 
 export interface DBSettings {
   id: string;
@@ -29,6 +29,16 @@ class ExpirationTrackerDB extends Dexie {
       expirationRecords: 'id, barcode, itemName, expirationDate, status, dateCreated',
       productData: 'barcode, itemName',
       settings: 'id'
+    });
+
+    this.version(2).stores({
+      expirationRecords: 'id, barcode, itemName, expirationDate, status, dateCreated',
+      productData: 'barcode, itemName, matchKey',
+      settings: 'id'
+    }).upgrade(async tx => {
+      await tx.table('productData').toCollection().modify((product: DBProductData) => {
+        product.matchKey = normalizeBarcodeForMatch(product.barcode);
+      });
     });
   }
 }
@@ -207,18 +217,65 @@ export const productDataService = {
     }
   },
 
+  async getFirst(limit = 100): Promise<ProductData[]> {
+    try {
+      return await db.productData.orderBy('itemName').limit(limit).toArray();
+    } catch (error) {
+      console.error('Error fetching product preview:', error);
+      return [];
+    }
+  },
+
+  async count(): Promise<number> {
+    try {
+      return await db.productData.count();
+    } catch (error) {
+      console.error('Error counting product data:', error);
+      return 0;
+    }
+  },
+
   async getByBarcode(barcode: string): Promise<ProductData | null> {
     try {
-      return await db.productData.get(barcode) || null;
+      const matchKey = normalizeBarcodeForMatch(barcode);
+      if (!matchKey) return null;
+      const exact = await db.productData.where('matchKey').equals(matchKey).first();
+      if (exact) return exact;
+      const trimmed = matchKey.replace(/^0+/, '');
+      if (trimmed && trimmed !== matchKey) {
+        return await db.productData.where('matchKey').equals(trimmed).first() || null;
+      }
+      return null;
     } catch (error) {
       console.error('Error fetching product by barcode:', error);
       return null;
     }
   },
 
+  async getDescriptionsByBarcodes(barcodes: string[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    const keys = Array.from(new Set(barcodes.map(normalizeBarcodeForMatch).filter(Boolean)));
+    if (!keys.length) return result;
+    try {
+      const products = await db.productData.where('matchKey').anyOf(keys).toArray();
+      for (const product of products) {
+        const description = product.description?.trim();
+        if (description && description.toLowerCase() !== 'created from scan') {
+          result.set(product.matchKey, description);
+        }
+      }
+      return result;
+    } catch (error) {
+      console.error('Error fetching product descriptions:', error);
+      return result;
+    }
+  },
+
   async create(product: ProductData): Promise<void> {
     try {
-      await db.productData.put(product);
+      const normalized = normalizeBarcodeForMatch(product.barcode);
+      if (!normalized) throw new Error('Barcode is required');
+      await db.productData.put({ ...product, barcode: product.barcode.trim(), matchKey: normalized });
     } catch (error) {
       console.error('Error creating product data:', error);
       throw error;
@@ -243,20 +300,54 @@ export const productDataService = {
     }
   },
 
-  async bulkCreate(products: ProductData[]): Promise<{ success: number; errors: string[] }> {
+  async bulkCreate(
+    products: ProductData[],
+    onProgress?: (processed: number, total: number) => void
+  ): Promise<{ success: number; errors: string[]; skipped: number }> {
     const errors: string[] = [];
     let success = 0;
+    let skipped = 0;
+    const batchSize = 250;
 
-    for (const product of products) {
+    for (let start = 0; start < products.length; start += batchSize) {
+      const batch = products.slice(start, start + batchSize);
+      const valid = batch
+        .map(product => ({
+          ...product,
+          barcode: product.barcode.trim(),
+          matchKey: normalizeBarcodeForMatch(product.barcode),
+        }))
+        .filter(product => {
+          if (!product.matchKey) {
+            skipped++;
+            return false;
+          }
+          return true;
+        });
+
       try {
-        await this.create(product);
-        success++;
+        await db.productData.bulkPut(valid);
+        success += valid.length;
       } catch (error) {
-        errors.push(`Failed to import ${product.barcode}: ${error}`);
+        // Fall back to individual writes only for a failed batch so one bad row
+        // cannot abort the entire import.
+        for (const product of valid) {
+          try {
+            await db.productData.put(product);
+            success++;
+          } catch (rowError) {
+            errors.push(`Failed to import ${product.barcode}: ${rowError}`);
+          }
+        }
       }
+
+      onProgress?.(Math.min(start + batch.length, products.length), products.length);
+      // Yield to Safari/iOS between batches so the browser can repaint and
+      // handle input instead of appearing frozen during a large import.
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
 
-    return { success, errors };
+    return { success, errors, skipped };
   },
 
   async clear(): Promise<void> {

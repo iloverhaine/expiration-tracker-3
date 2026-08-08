@@ -56,20 +56,16 @@ export default function HomePage() {
 
   /* ---------------- INIT ---------------- */
   const loadRecords = async () => {
-    const [data, products] = await Promise.all([
-      expirationRecordsService.getAll(),
-      productDataService.getAll(),
-    ]);
-
+    const data = await expirationRecordsService.getAll();
     setRecords(data);
-    const descriptionMap = new Map<string, string>();
-    for (const product of products) {
-      const key = normalizeBarcodeForMatch(product.barcode);
-      const description = product.description?.trim() ?? "";
-      if (key && description) {
-        descriptionMap.set(key, description);
-      }
-    }
+
+    // Do not load the entire Product Database into memory on every Home render.
+    // This is important on iPhone/Safari when the database contains tens of
+    // thousands of products. Fetch only descriptions for barcodes currently
+    // visible in the expiration records.
+    const descriptionMap = await productDataService.getDescriptionsByBarcodes(
+      data.map(record => record.barcode)
+    );
     setProductDescriptions(descriptionMap);
   };
 

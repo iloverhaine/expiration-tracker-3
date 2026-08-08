@@ -2,17 +2,29 @@
 
 import * as XLSX from 'xlsx';
 import type { ExpirationRecord, ProductData, ExcelImportResult, ExcelExportData } from '@/types';
+import { normalizeBarcodeForMatch } from '@/lib/db';
 
 // Excel import for product data
 export const importProductDataFromExcel = async (file: File): Promise<ExcelImportResult> => {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    const workbook = XLSX.read(arrayBuffer, {
+      type: 'array',
+      dense: true,
+      cellStyles: false,
+      cellFormula: false,
+      cellHTML: false,
+      cellNF: false,
+    });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     
     // Convert to JSON
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+    }) as string[][];
     
     if (jsonData.length < 2) {
       return {
@@ -63,11 +75,13 @@ export const importProductDataFromExcel = async (file: File): Promise<ExcelImpor
       
       if (!row || row.length === 0) continue;
 
-      const barcode = row[barcodeIndex]?.toString().trim();
+      const rawBarcode = row[barcodeIndex]?.toString().trim();
+      const barcodeKey = normalizeBarcodeForMatch(rawBarcode);
+      const barcode = barcodeKey || rawBarcode;
       const itemName = row[itemNameIndex]?.toString().trim();
       const description = row[descriptionIndex]?.toString().trim();
 
-      if (!barcode || !itemName) {
+      if (!barcodeKey || !itemName) {
         errors.push(`Row ${i + 1}: Missing barcode or item name`);
         continue;
       }
@@ -75,7 +89,8 @@ export const importProductDataFromExcel = async (file: File): Promise<ExcelImpor
       products.push({
         barcode,
         itemName,
-        description: description || ''
+        description: description || '',
+        matchKey: barcodeKey
       });
     }
 
@@ -337,11 +352,13 @@ export const importProductDataFromCSV = async (file: File): Promise<ExcelImportR
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
       
-      const barcode = values[barcodeIndex]?.trim();
+      const rawBarcode = values[barcodeIndex]?.trim();
+      const barcodeKey = normalizeBarcodeForMatch(rawBarcode);
+      const barcode = barcodeKey || rawBarcode;
       const itemName = values[itemNameIndex]?.trim();
       const description = values[descriptionIndex]?.trim();
 
-      if (!barcode || !itemName) {
+      if (!barcodeKey || !itemName) {
         errors.push(`Row ${i + 1}: Missing barcode or item name`);
         continue;
       }
@@ -349,7 +366,8 @@ export const importProductDataFromCSV = async (file: File): Promise<ExcelImportR
       products.push({
         barcode,
         itemName,
-        description: description || ''
+        description: description || '',
+        matchKey: barcodeKey
       });
     }
 
