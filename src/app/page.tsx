@@ -23,6 +23,8 @@ import {
   Search,
   Trash2,
   Upload,
+  ScanLine,
+  Plus,
 } from "lucide-react";
 import {
   expirationRecordsService,
@@ -338,7 +340,21 @@ export default function HomePage() {
 
       {/* ACTIONS */}
       <div className="p-4 space-y-3">
-        <div>
+        <div className="grid grid-cols-3 gap-2">
+          <Link href="/scan" className="block">
+            <Button variant="outline" className="w-full h-12">
+              <ScanLine className="h-5 w-5 mr-2" />
+              Scan
+            </Button>
+          </Link>
+
+          <Link href="/add-item" className="block">
+            <Button variant="outline" className="w-full h-12">
+              <Plus className="h-5 w-5 mr-2" />
+              Manual
+            </Button>
+          </Link>
+
           <Button
             variant="outline"
             className="w-full h-12"
