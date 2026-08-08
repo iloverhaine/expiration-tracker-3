@@ -580,14 +580,14 @@ export default function HomePage() {
                       {record.itemName}
                     </h3>
                     <p className="mt-1 text-sm text-gray-600">
-                      <span className="font-medium text-gray-700">Item Code:</span>{" "}
+                      <span className="font-medium text-gray-700">Barcode:</span>{" "}
                       <span className="font-mono">
                         {formatBarcodeForDisplay(record.barcode) || "—"}
                       </span>
                     </p>
                     {hasUsefulDescription && (
                       <p className="mt-1 text-sm text-gray-600">
-                        <span className="font-medium text-gray-700">Description:</span>{" "}
+                        <span className="font-medium text-gray-700">Item Code:</span>{" "}
                         {displayDescription}
                       </p>
                     )}
