@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,6 +25,7 @@ import {
   Upload,
   ScanLine,
   Plus,
+  Pencil,
 } from "lucide-react";
 import {
   expirationRecordsService,
@@ -47,6 +48,11 @@ export default function HomePage() {
   const [productDescriptions, setProductDescriptions] = useState<Map<string, string>>(
     new Map()
   );
+  const [swipedRecordId, setSwipedRecordId] = useState<string | null>(null);
+  const swipeStart = useRef({ x: 0, y: 0 });
+  const swipeDelta = useRef(0);
+  const swipeTracking = useRef(false);
+  const suppressNextClick = useRef(false);
 
   /* ---------------- INIT ---------------- */
   const loadRecords = async () => {
@@ -183,6 +189,59 @@ export default function HomePage() {
       return next;
     });
     await loadRecords();
+  };
+
+  /* ---------------- SWIPE ACTIONS ---------------- */
+  const handleSwipeStart = (event: React.PointerEvent, id: string) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    swipeStart.current = { x: event.clientX, y: event.clientY };
+    swipeDelta.current = 0;
+    swipeTracking.current = true;
+    suppressNextClick.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleSwipeMove = (event: React.PointerEvent, id: string) => {
+    if (!swipeTracking.current) return;
+
+    const dx = event.clientX - swipeStart.current.x;
+    const dy = event.clientY - swipeStart.current.y;
+
+    // Let the page scroll normally when the gesture is primarily vertical.
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) {
+      swipeTracking.current = false;
+      return;
+    }
+
+    if (dx < 0) {
+      swipeDelta.current = Math.max(-140, dx);
+      if (Math.abs(dx) > 12) {
+        suppressNextClick.current = true;
+        setSwipedRecordId(id);
+      }
+    } else if (swipedRecordId === id) {
+      swipeDelta.current = Math.min(0, dx);
+    }
+  };
+
+  const handleSwipeEnd = (event: React.PointerEvent, id: string) => {
+    if (!swipeTracking.current) return;
+    swipeTracking.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+
+    if (swipeDelta.current <= -70) {
+      setSwipedRecordId(id);
+      swipeDelta.current = -140;
+    } else {
+      setSwipedRecordId(null);
+      swipeDelta.current = 0;
+    }
+  };
+
+  const closeSwipe = () => {
+    setSwipedRecordId(null);
+    swipeDelta.current = 0;
   };
 
   /* ---------------- MONTH-ONLY EXPIRATION LOGIC ---------------- */
@@ -390,7 +449,12 @@ export default function HomePage() {
 
         {/* DISPLAY NUMBER OF RECORDS */}
         <div className="flex items-center justify-between gap-3 text-sm text-gray-600">
-          <p>Total records: {records.length}</p>
+          <div>
+            <p>Total records: {records.length}</p>
+            {records.length > 0 && (
+              <p className="mt-0.5 text-[11px] text-gray-400">Swipe a card left for Edit / Delete</p>
+            )}
+          </div>
           {filteredRecords.length > 0 && (
             <Button
               variant="ghost"
@@ -462,14 +526,58 @@ export default function HomePage() {
               ? "border-2 border-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.35)]"
               : "border border-green-300";
 
+          const isSwiped = swipedRecordId === record.id;
+
           return (
-            <Card
+            <div
               key={record.id}
-              className={`transition-shadow hover:shadow-lg ${statusBorderClass} ${
-                isSelected ? "ring-2 ring-red-500 ring-offset-2" : ""
-              }`}
+              className="relative overflow-hidden rounded-lg touch-pan-y"
+              onPointerDown={(event) => handleSwipeStart(event, record.id)}
+              onPointerMove={(event) => handleSwipeMove(event, record.id)}
+              onPointerUp={(event) => handleSwipeEnd(event, record.id)}
+              onPointerCancel={(event) => handleSwipeEnd(event, record.id)}
+              onClickCapture={(event) => {
+                if (suppressNextClick.current) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  suppressNextClick.current = false;
+                }
+              }}
             >
-              <CardContent className="p-4">
+              {/* Swipe actions: reveal by swiping the card from right to left. */}
+              <div className="absolute inset-y-0 right-0 flex w-[140px] items-stretch">
+                <Link
+                  href={`/edit-item/${record.id}`}
+                  onClick={closeSwipe}
+                  className="flex flex-1 flex-col items-center justify-center gap-1 bg-blue-600 text-xs font-medium text-white"
+                  aria-label={`Edit ${record.itemName}`}
+                >
+                  <Pencil className="h-5 w-5" />
+                  Edit
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeSwipe();
+                    void handleSingleDelete(record);
+                  }}
+                  className="flex flex-1 flex-col items-center justify-center gap-1 bg-red-600 text-xs font-medium text-white"
+                  aria-label={`Delete ${record.itemName}`}
+                >
+                  <Trash2 className="h-5 w-5" />
+                  Delete
+                </button>
+              </div>
+
+              <div
+                className={`relative z-10 ${isSwiped ? "-translate-x-[140px]" : "translate-x-0"} transition-transform duration-200 ease-out`}
+              >
+                <Card
+                  className={`transition-shadow hover:shadow-lg ${statusBorderClass} ${
+                    isSelected ? "ring-2 ring-red-500 ring-offset-2" : ""
+                  }`}
+                >
+                  <CardContent className="p-4">
                 <div className="flex justify-between items-start gap-3">
                   <Link href={`/item/${record.id}`} className="min-w-0 flex-1">
                     <h3 className="truncate text-lg font-semibold">
@@ -526,6 +634,12 @@ export default function HomePage() {
                           Select for batch delete
                         </DropdownMenuCheckboxItem>
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem asChild>
+                          <Link href={`/edit-item/${record.id}`}>
+                            <Pencil className="h-4 w-4" />
+                            Edit item
+                          </Link>
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
                           onSelect={() => void handleSingleDelete(record)}
@@ -579,8 +693,10 @@ export default function HomePage() {
                     {result.label}
                   </span>
                 </Link>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           );
         })}
       </div>
